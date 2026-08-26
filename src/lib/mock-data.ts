@@ -89,15 +89,16 @@ export const CARD_STATEMENTS: CardStatement[] = [
 ];
 
 // Monthly aggregated data for charts Jan-Aug 2026
+// balance = ingresos - gastos (cuotas tracked separately for compatibility)
 export const MONTHLY_DATA = [
-  { month: "Ene", ingresos: 920000, gastos: 380000, balance: 540000, ccl: 1002 },
-  { month: "Feb", ingresos: 980000, gastos: 420000, balance: 560000, ccl: 1085 },
-  { month: "Mar", ingresos: 1080000, gastos: 460000, balance: 620000, ccl: 1148 },
-  { month: "Abr", ingresos: 1180000, gastos: 510000, balance: 670000, ccl: 1215 },
-  { month: "May", ingresos: 1280000, gastos: 540000, balance: 740000, ccl: 1310 },
-  { month: "Jun", ingresos: 1380000, gastos: 580000, balance: 800000, ccl: 1392 },
-  { month: "Jul", ingresos: 1530000, gastos: 620000, balance: 910000, ccl: 1468 },
-  { month: "Ago", ingresos: 1628500, gastos: 520100, balance: 1108400, ccl: 1548 },
+  { month: "Ene", dateKey: "2026-01", ingresos: 920000,  gastos: 380000, cuotas: 180000, balance: 540000,  ccl: 1002 },
+  { month: "Feb", dateKey: "2026-02", ingresos: 980000,  gastos: 420000, cuotas: 185000, balance: 560000,  ccl: 1085 },
+  { month: "Mar", dateKey: "2026-03", ingresos: 1080000, gastos: 460000, cuotas: 290000, balance: 620000,  ccl: 1148 },
+  { month: "Abr", dateKey: "2026-04", ingresos: 1180000, gastos: 510000, cuotas: 295000, balance: 670000,  ccl: 1215 },
+  { month: "May", dateKey: "2026-05", ingresos: 1280000, gastos: 540000, cuotas: 390000, balance: 740000,  ccl: 1310 },
+  { month: "Jun", dateKey: "2026-06", ingresos: 1380000, gastos: 580000, cuotas: 415000, balance: 800000,  ccl: 1392 },
+  { month: "Jul", dateKey: "2026-07", ingresos: 1530000, gastos: 620000, cuotas: 445000, balance: 910000,  ccl: 1468 },
+  { month: "Ago", dateKey: "2026-08", ingresos: 1628500, gastos: 520100, cuotas: 623450, balance: 1108400, ccl: 1548 },
 ];
 
 // Current month (August 2026) summary
@@ -112,6 +113,9 @@ export const CURRENT_MONTH = {
 
 export const getCategoryById = (id: string): Category | undefined =>
   CATEGORIES.find((c) => c.id === id);
+
+export const getCardById = (id: string): Card | undefined =>
+  CARDS.find((c) => c.id === id);
 
 export const formatARS = (amount: number): string =>
   new Intl.NumberFormat("es-AR", {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, X, ChevronDown, Check } from "lucide-react";
+import { Plus, X, ChevronDown, Check, Search } from "lucide-react";
 import {
   CARDS,
   CARD_STATEMENTS,
@@ -528,9 +528,11 @@ export default function CuotasPage() {
   const [statements, setStatements] = useState<CardStatement[]>(CARD_STATEMENTS);
   const [modalOpen, setModalOpen] = useState(false);
   const [resumenModal, setResumenModal] = useState<{ open: boolean; card: Card | null }>({ open: false, card: null });
+  const [searchQuery, setSearchQuery] = useState("");
 
   const activePurchases = purchases.filter(
-    (p) => p.paid_installments < p.total_installments
+    (p) => p.paid_installments < p.total_installments &&
+      (!searchQuery || p.description.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   const handleSave = (data: NewPurchaseForm) => {
@@ -563,8 +565,8 @@ export default function CuotasPage() {
 
   return (
     <div
-      style={{ minHeight: "100vh", padding: "32px 24px", maxWidth: "1200px", animation: "fadeIn 0.4s ease-out" }}
-      className="mx-auto"
+      style={{ minHeight: "100vh", maxWidth: "1200px", animation: "fadeIn 0.4s ease-out" }}
+      className="mx-auto px-4 py-6 md:px-8 md:py-8"
     >
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px" }}>
@@ -714,9 +716,19 @@ export default function CuotasPage() {
 
       {/* Active installments table */}
       <div>
-        <h2 style={{ fontSize: "16px", fontWeight: "700", marginBottom: "16px" }}>
-          Cuotas activas
-        </h2>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "16px", flexWrap: "wrap" }}>
+          <h2 style={{ fontSize: "16px", fontWeight: "700" }}>Cuotas activas</h2>
+          <div style={{ position: "relative", flex: "0 1 220px" }}>
+            <Search size={13} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", pointerEvents: "none" }} />
+            <input
+              type="text"
+              placeholder="Buscar..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{ paddingLeft: "32px", width: "100%" }}
+            />
+          </div>
+        </div>
 
         {activePurchases.length === 0 ? (
           <div

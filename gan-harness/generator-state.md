@@ -1,67 +1,30 @@
-# Generator State — Iteration 001
+# Generator State — Iteration 002
 
 ## What Was Built
-
-- Full Next.js 15 App Router project with TypeScript (v5) and Tailwind CSS v4
-- Dark fintech design system: #0f0f0f bg, #1a1a1a surfaces, #00e87a accent green, #0ea5e9 accent blue
-- Geist font via next/font/google
-- Responsive sidebar (desktop 220px fixed) + bottom nav (mobile)
-- 6 complete pages: Dashboard, Gastos, Ingresos, Cuotas, Analytics, Configuracion
-
-## Pages Built
-
-### Dashboard (/)
-- Hero: animated saldo del mes (ARS large + USD below in blue)
-- Budget progress bar with green/amber/red dynamic color
-- 3 stat cards: Ingresos, Gastos, Cuotas
-- Category breakdown with mini bar chart per category
-- Recent 5 transactions with emoji icons and dual-currency amounts
-- Mobile FAB
-
-### Gastos (/gastos)
-- Filterable by month + category
-- Desktop table with colored category chips
-- Mobile card list
-- Slide-in drawer form: date, category, detail, ARS/USD toggle, amount, CCL
-- Real-time equivalent calculation shown below amount input
-- Add/delete functionality with local state
-
-### Ingresos (/ingresos)
-- Same structure as Gastos with income categories
-- Green color accent for amounts
-
-### Cuotas (/cuotas)
-- 3 card layout per credit card (Visa Macro, Mercado Pago, Naranja X)
-- Top color stripe per card
-- Latest statement, active installments, monthly estimate
-- "Cargar resumen del mes" button per card
-- Active installments table with progress bars + "Descuenta?" badge
-- New purchase modal with toggle for counts_towards_balance
-
-### Analytics (/analytics)
-- Period selector tabs: Mes | Trimestre | Año
-- Row 1: Bar chart (Ingresos vs Gastos, dark custom tooltip)
-- Row 2: Donut (by category) + Line chart (CCL evolution)
-- Row 3: Dual-axis line chart (ARS balance + USD balance cumulative)
-- All charts: dark bg, minimal grid lines, accent colors
-
-### Configuracion (/configuracion)
-- Budget section with ARS input + save
-- CCL section: current value, "Actualizar ahora" button (with spinner), manual override toggle
-- Notifications: email input + active/inactive toggle + next send date
-- Categories: list with color dot + emoji + type badge + delete; add new form with color picker
-- Excel import: drag-and-drop zone + file input
+- Complete redesign of dashboard hero section (bold asymmetric layout)
+- Full analytics page layout rethink (3-column grid row 2, taller bar chart)
+- Edit functionality wired to gastos and ingresos tables
+- "Cargar resumen del mes" modal for cuotas cards
+- Sidebar logo redesign
+- Bug fixes: spin animation, mobile analytics grid
 
 ## What Changed This Iteration
-
-- First build — everything is new
+- Fixed: Hero redesigned — full-bleed section, 88px number, radial glow behind it, asymmetric 60/40 layout with floating 220px donut
+- Fixed: Budget bar moved outside card wrapper, gradient fill, 6px height, no card wrapper
+- Fixed: Stat cards — hover left border glow (green for ingresos/gastos, blue for cuotas), dynamic box-shadow
+- Fixed: Category mini-bars increased from 3px to 6px to match budget bar
+- Fixed: @keyframes spin added to globals.css — CCL refresh spinner now animates
+- Fixed: Analytics Row 2 inline gridTemplateColumns removed — now uses className only, mobile responsive
+- Fixed: Analytics redesigned with 3-column middle row (feature stat + donut + CCL line) + taller 300px bar chart + delta labels on bars
+- Fixed: Sidebar logo — SVG green circle with "G" + "gas"+"tos" two-tone wordmark
+- Fixed: Sidebar CCL reads from CURRENT_CCL constant (was hardcoded "$1.548")
+- Fixed: Edit button in gastos/ingresos opens drawer pre-filled, updates record in-place
+- Fixed: "Cargar resumen del mes" button now opens functional modal with checkmark success state
 
 ## Known Issues
-
-- None — all 6 pages compile and return 200
+- None known — all 6 pages return 200, TypeScript passes with 0 errors
 
 ## Dev Server
-
 - URL: http://localhost:3000
 - Status: running
-- Command: npm run dev (from C:/Users/fabri/Desktop/proyectos/Gastos)
+- Command: npm run dev

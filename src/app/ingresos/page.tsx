@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, X, Pencil, Trash2, ChevronDown } from "lucide-react";
+import { Plus, X, Pencil, Trash2, ChevronDown, Search } from "lucide-react";
 import { INCOMES, CATEGORIES, CURRENT_CCL, getCategoryById } from "@/lib/mock-data";
 import type { Income } from "@/types/database";
 
@@ -136,7 +136,7 @@ function IncomeDrawer({
           zIndex: 101,
           display: "flex",
           flexDirection: "column",
-          animation: "slideUp 0.25s ease-out",
+          animation: "slideInRight 0.25s ease-out",
         }}
       >
         <div
@@ -319,11 +319,13 @@ export default function IngresosPage() {
   const [editingIncome, setEditingIncome] = useState<Income | null>(null);
   const [selectedMonth, setSelectedMonth] = useState("2026-08");
   const [selectedCategory, setSelectedCategory] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const filtered = incomes.filter((i) => {
     const monthMatch = i.date.startsWith(selectedMonth);
     const catMatch = selectedCategory === "all" || i.category_id === selectedCategory;
-    return monthMatch && catMatch;
+    const searchMatch = !searchQuery || i.detail.toLowerCase().includes(searchQuery.toLowerCase());
+    return monthMatch && catMatch && searchMatch;
   });
 
   const total = filtered.reduce((s, i) => s + i.amount_ars, 0);
@@ -387,7 +389,7 @@ export default function IngresosPage() {
   };
 
   return (
-    <div style={{ minHeight: "100vh", padding: "32px 24px", maxWidth: "1200px", animation: "fadeIn 0.4s ease-out" }} className="mx-auto">
+    <div style={{ minHeight: "100vh", maxWidth: "1200px", animation: "fadeIn 0.4s ease-out" }} className="mx-auto px-4 py-6 md:px-8 md:py-8">
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px" }}>
         <div>
@@ -420,7 +422,7 @@ export default function IngresosPage() {
         </button>
       </div>
 
-      {/* Filters */}
+      {/* Search + Filters */}
       <div
         style={{
           background: "var(--surface)",
@@ -429,19 +431,30 @@ export default function IngresosPage() {
           padding: "14px 16px",
           marginBottom: "20px",
           display: "flex",
-          gap: "12px",
+          gap: "10px",
           flexWrap: "wrap",
         }}
       >
-        <div style={{ position: "relative" }}>
-          <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} style={{ paddingRight: "32px", appearance: "none", minWidth: "160px" }}>
+        <div style={{ position: "relative", flex: "1 1 180px" }}>
+          <Search size={13} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", pointerEvents: "none" }} />
+          <input
+            type="text"
+            placeholder="Buscar..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ paddingLeft: "32px", width: "100%" }}
+          />
+        </div>
+
+        <div style={{ position: "relative", flex: "1 1 140px" }}>
+          <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} style={{ paddingRight: "32px", appearance: "none", width: "100%" }}>
             {MONTHS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
           <ChevronDown size={12} style={{ position: "absolute", right: "10px", top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", pointerEvents: "none" }} />
         </div>
 
-        <div style={{ position: "relative" }}>
-          <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} style={{ paddingRight: "32px", appearance: "none", minWidth: "150px" }}>
+        <div style={{ position: "relative", flex: "1 1 140px" }}>
+          <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} style={{ paddingRight: "32px", appearance: "none", width: "100%" }}>
             <option value="all">Todas las categorías</option>
             {incomeCategories.map((cat) => (
               <option key={cat.id} value={cat.id}>{cat.emoji} {cat.name}</option>

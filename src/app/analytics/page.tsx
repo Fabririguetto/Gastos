@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   BarChart,
   Bar,
@@ -163,13 +163,21 @@ function DeltaLabel(props: any) {
 
 export default function AnalyticsPage() {
   const [period, setPeriod] = useState<Period>("Año");
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   const filteredData = getFilteredData(period);
 
   return (
     <div
-      style={{ minHeight: "100vh", padding: "32px 24px", maxWidth: "1200px", animation: "fadeIn 0.4s ease-out" }}
-      className="mx-auto"
+      style={{ minHeight: "100vh", maxWidth: "1200px", animation: "fadeIn 0.4s ease-out" }}
+      className="mx-auto px-4 py-6 md:px-8 md:py-8"
     >
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px", flexWrap: "wrap", gap: "12px" }}>
@@ -443,19 +451,23 @@ export default function AnalyticsPage() {
             <LineChart data={cumulativeData}>
               <CartesianGrid strokeDasharray="0" stroke="#1d1d1d" vertical={false} />
               <XAxis dataKey="month" {...axisStyle} />
+              {/* ARS axis — always shown */}
               <YAxis
                 yAxisId="ars"
                 {...axisStyle}
-                width={65}
+                width={isMobile ? 48 : 65}
                 tickFormatter={formatK}
               />
-              <YAxis
-                yAxisId="usd"
-                orientation="right"
-                {...axisStyle}
-                width={55}
-                tickFormatter={(v: number) => `u$d${Math.round(v / 1000)}k`}
-              />
+              {/* USD axis — only on desktop to avoid cramped layout on mobile */}
+              {!isMobile && (
+                <YAxis
+                  yAxisId="usd"
+                  orientation="right"
+                  {...axisStyle}
+                  width={52}
+                  tickFormatter={(v: number) => `u$d${Math.round(v)}`}
+                />
+              )}
               <Tooltip
                 {...tooltipStyle}
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -482,7 +494,7 @@ export default function AnalyticsPage() {
                 activeDot={{ r: 5 }}
               />
               <Line
-                yAxisId="usd"
+                yAxisId={isMobile ? "ars" : "usd"}
                 type="monotone"
                 dataKey="saldo_usd"
                 stroke="#0ea5e9"

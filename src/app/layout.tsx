@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar, BottomNav } from "@/components/layout/Sidebar";
+import { ToastProvider } from "@/components/ui/Toast";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,45 +19,23 @@ export const metadata: Metadata = {
   description: "App de control de gastos personales para Argentina",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable}`}
-        style={{ background: "var(--bg)", color: "var(--text-primary)" }}
-      >
-        {/* Desktop sidebar */}
-        <div
-          style={{
-            display: "flex",
-            minHeight: "100vh",
-          }}
-        >
-          {/* Sidebar — hidden on mobile via CSS */}
-          <div className="hidden md:block">
-            <Sidebar />
+      <body className={`${geistSans.variable} ${geistMono.variable}`}>
+        <ToastProvider>
+          <div style={{ display: "flex", minHeight: "100vh", alignItems: "flex-start" }}>
+            <div className="hidden md:block">
+              <Sidebar />
+            </div>
+            <main style={{ flex: 1, minWidth: 0, overflowX: "hidden" }} className="pb-20 md:pb-0">
+              {children}
+            </main>
           </div>
-
-          {/* Main content */}
-          <main
-            style={{
-              flex: 1,
-              overflowX: "hidden",
-            }}
-            className="md:ml-[220px] pb-20 md:pb-0"
-          >
-            {children}
-          </main>
-        </div>
-
-        {/* Mobile bottom nav */}
-        <div className="md:hidden">
-          <BottomNav />
-        </div>
+          <div className="md:hidden">
+            <BottomNav />
+          </div>
+        </ToastProvider>
       </body>
     </html>
   );

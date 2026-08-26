@@ -5,3 +5,8 @@
 node_modules/
 .next/
 .DS_Store
+bash.exe.stackdump
+.claude/
+.agents/
+playwright-report/
+test-results/
