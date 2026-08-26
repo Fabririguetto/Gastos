@@ -45,23 +45,56 @@ interface ExpenseFormData {
   ccl_rate: string;
 }
 
-function AddExpenseDrawer({
+function ExpenseDrawer({
   open,
   onClose,
   onSave,
+  editingExpense,
 }: {
   open: boolean;
   onClose: () => void;
-  onSave: (data: ExpenseFormData) => void;
+  onSave: (data: ExpenseFormData, editingId?: string) => void;
+  editingExpense?: Expense | null;
 }) {
-  const [form, setForm] = useState<ExpenseFormData>({
+  const defaultForm: ExpenseFormData = {
     date: new Date().toISOString().split("T")[0],
     category_id: expenseCategories[0]?.id ?? "",
     detail: "",
     currency: "ARS",
     amount: "",
     ccl_rate: String(CURRENT_CCL),
-  });
+  };
+
+  const [form, setForm] = useState<ExpenseFormData>(
+    editingExpense
+      ? {
+          date: editingExpense.date,
+          category_id: editingExpense.category_id,
+          detail: editingExpense.detail,
+          currency: editingExpense.currency as "ARS" | "USD",
+          amount: String(editingExpense.amount),
+          ccl_rate: String(editingExpense.ccl_rate),
+        }
+      : defaultForm
+  );
+
+  // Sync form when editingExpense changes
+  const [lastEditing, setLastEditing] = useState<string | undefined>(editingExpense?.id);
+  if (editingExpense?.id !== lastEditing) {
+    setLastEditing(editingExpense?.id);
+    if (editingExpense) {
+      setForm({
+        date: editingExpense.date,
+        category_id: editingExpense.category_id,
+        detail: editingExpense.detail,
+        currency: editingExpense.currency as "ARS" | "USD",
+        amount: String(editingExpense.amount),
+        ccl_rate: String(editingExpense.ccl_rate),
+      });
+    } else {
+      setForm(defaultForm);
+    }
+  }
 
   const amountNum = parseFloat(form.amount) || 0;
   const cclNum = parseFloat(form.ccl_rate) || CURRENT_CCL;
@@ -72,6 +105,8 @@ function AddExpenseDrawer({
       : `≈ $${Math.round(amountNum * cclNum).toLocaleString("es-AR")} ARS @ $${cclNum.toLocaleString("es-AR")} CCL`;
 
   if (!open) return null;
+
+  const isEditing = !!editingExpense;
 
   return (
     <>
@@ -113,7 +148,16 @@ function AddExpenseDrawer({
             borderBottom: "1px solid var(--border)",
           }}
         >
-          <h2 style={{ fontSize: "18px", fontWeight: "700" }}>Agregar gasto</h2>
+          <div>
+            <h2 style={{ fontSize: "18px", fontWeight: "700" }}>
+              {isEditing ? "Editar gasto" : "Agregar gasto"}
+            </h2>
+            {isEditing && (
+              <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}>
+                Modificá los datos del gasto
+              </p>
+            )}
+          </div>
           <button
             onClick={onClose}
             style={{
@@ -223,7 +267,7 @@ function AddExpenseDrawer({
               </label>
               <input
                 type="number"
-                placeholder={form.currency === "ARS" ? "0.00" : "0.00"}
+                placeholder="0.00"
                 value={form.amount}
                 onChange={(e) => setForm({ ...form, amount: e.target.value })}
               />
@@ -276,7 +320,7 @@ function AddExpenseDrawer({
           <button
             onClick={() => {
               if (form.detail && form.amount) {
-                onSave(form);
+                onSave(form, editingExpense?.id);
                 onClose();
               }
             }}
@@ -292,7 +336,7 @@ function AddExpenseDrawer({
               fontWeight: "700",
             }}
           >
-            Guardar gasto
+            {isEditing ? "Actualizar gasto" : "Guardar gasto"}
           </button>
         </div>
       </div>
@@ -303,6 +347,7 @@ function AddExpenseDrawer({
 export default function GastosPage() {
   const [expenses, setExpenses] = useState<Expense[]>(EXPENSES);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [selectedMonth, setSelectedMonth] = useState("2026-08");
   const [selectedCategory, setSelectedCategory] = useState("all");
 
@@ -314,22 +359,58 @@ export default function GastosPage() {
 
   const total = filtered.reduce((s, e) => s + e.amount_ars, 0);
 
-  const handleSave = (data: ExpenseFormData) => {
+  const openAdd = () => {
+    setEditingExpense(null);
+    setDrawerOpen(true);
+  };
+
+  const openEdit = (expense: Expense) => {
+    setEditingExpense(expense);
+    setDrawerOpen(true);
+  };
+
+  const handleClose = () => {
+    setDrawerOpen(false);
+    setEditingExpense(null);
+  };
+
+  const handleSave = (data: ExpenseFormData, editingId?: string) => {
     const ccl = parseFloat(data.ccl_rate) || CURRENT_CCL;
     const amount = parseFloat(data.amount) || 0;
-    const newExpense: Expense = {
-      id: `e-${Date.now()}`,
-      date: data.date,
-      category_id: data.category_id,
-      detail: data.detail,
-      amount,
-      currency: data.currency,
-      amount_ars: data.currency === "ARS" ? amount : amount * ccl,
-      amount_usd: data.currency === "USD" ? amount : amount / ccl,
-      ccl_rate: ccl,
-      created_at: new Date().toISOString(),
-    };
-    setExpenses((prev) => [newExpense, ...prev]);
+
+    if (editingId) {
+      setExpenses((prev) =>
+        prev.map((e) =>
+          e.id === editingId
+            ? {
+                ...e,
+                date: data.date,
+                category_id: data.category_id,
+                detail: data.detail,
+                amount,
+                currency: data.currency,
+                amount_ars: data.currency === "ARS" ? amount : amount * ccl,
+                amount_usd: data.currency === "USD" ? amount : amount / ccl,
+                ccl_rate: ccl,
+              }
+            : e
+        )
+      );
+    } else {
+      const newExpense: Expense = {
+        id: `e-${Date.now()}`,
+        date: data.date,
+        category_id: data.category_id,
+        detail: data.detail,
+        amount,
+        currency: data.currency,
+        amount_ars: data.currency === "ARS" ? amount : amount * ccl,
+        amount_usd: data.currency === "USD" ? amount : amount / ccl,
+        ccl_rate: ccl,
+        created_at: new Date().toISOString(),
+      };
+      setExpenses((prev) => [newExpense, ...prev]);
+    }
   };
 
   const handleDelete = (id: string) => {
@@ -350,7 +431,7 @@ export default function GastosPage() {
           </p>
         </div>
         <button
-          onClick={() => setDrawerOpen(true)}
+          onClick={openAdd}
           style={{
             display: "flex",
             alignItems: "center",
@@ -469,21 +550,49 @@ export default function GastosPage() {
                       <td style={{ textAlign: "right", fontWeight: "600", fontSize: "14px", fontVariantNumeric: "tabular-nums" }}>
                         ${new Intl.NumberFormat("es-AR").format(expense.amount_ars)}
                       </td>
-                      <td style={{ textAlign: "right", fontSize: "13px", color: "var(--accent-blue)" }}>
+                      <td style={{ textAlign: "right", fontSize: "13px", color: "var(--accent-blue)", fontVariantNumeric: "tabular-nums" }}>
                         u$d {expense.amount_usd < 10 ? expense.amount_usd.toFixed(1) : Math.round(expense.amount_usd)}
                       </td>
                       <td style={{ textAlign: "right" }}>
                         <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
                           <button
-                            style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "4px" }}
-                            title="Editar"
+                            onClick={() => openEdit(expense)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              color: "var(--text-muted)",
+                              cursor: "pointer",
+                              padding: "6px",
+                              borderRadius: "6px",
+                              transition: "color 0.15s ease, background 0.15s ease",
+                            }}
+                            title="Editar gasto"
+                            onMouseEnter={(e) => {
+                              (e.currentTarget as HTMLButtonElement).style.color = "var(--accent-green)";
+                              (e.currentTarget as HTMLButtonElement).style.background = "rgba(0,232,122,0.08)";
+                            }}
+                            onMouseLeave={(e) => {
+                              (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)";
+                              (e.currentTarget as HTMLButtonElement).style.background = "none";
+                            }}
                           >
                             <Pencil size={14} />
                           </button>
                           <button
                             onClick={() => handleDelete(expense.id)}
-                            style={{ background: "none", border: "none", color: "var(--error)", cursor: "pointer", padding: "4px", opacity: 0.7 }}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              color: "var(--error)",
+                              cursor: "pointer",
+                              padding: "6px",
+                              borderRadius: "6px",
+                              opacity: 0.7,
+                              transition: "opacity 0.15s ease",
+                            }}
                             title="Eliminar"
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.7"; }}
                           >
                             <Trash2 size={14} />
                           </button>
@@ -537,19 +646,27 @@ export default function GastosPage() {
                     </p>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <p style={{ fontSize: "15px", fontWeight: "700" }}>
+                    <p style={{ fontSize: "15px", fontWeight: "700", fontVariantNumeric: "tabular-nums" }}>
                       ${new Intl.NumberFormat("es-AR").format(expense.amount_ars)}
                     </p>
-                    <p style={{ fontSize: "11px", color: "var(--accent-blue)", marginTop: "2px" }}>
+                    <p style={{ fontSize: "11px", color: "var(--accent-blue)", marginTop: "2px", fontVariantNumeric: "tabular-nums" }}>
                       u$d {Math.round(expense.amount_usd)}
                     </p>
                   </div>
-                  <button
-                    onClick={() => handleDelete(expense.id)}
-                    style={{ background: "none", border: "none", color: "var(--error)", cursor: "pointer", padding: "4px", opacity: 0.6, flexShrink: 0 }}
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                  <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+                    <button
+                      onClick={() => openEdit(expense)}
+                      style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "4px" }}
+                    >
+                      <Pencil size={16} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(expense.id)}
+                      style={{ background: "none", border: "none", color: "var(--error)", cursor: "pointer", padding: "4px", opacity: 0.6 }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -557,11 +674,16 @@ export default function GastosPage() {
         </>
       )}
 
-      <AddExpenseDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} onSave={handleSave} />
+      <ExpenseDrawer
+        open={drawerOpen}
+        onClose={handleClose}
+        onSave={handleSave}
+        editingExpense={editingExpense}
+      />
 
       {/* Mobile FAB */}
       <button
-        onClick={() => setDrawerOpen(true)}
+        onClick={openAdd}
         className="md:hidden"
         style={{
           position: "fixed",

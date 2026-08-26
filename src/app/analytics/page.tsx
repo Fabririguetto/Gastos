@@ -14,6 +14,7 @@ import {
   LineChart,
   Line,
   CartesianGrid,
+  LabelList,
   Legend,
 } from "recharts";
 import { MONTHLY_DATA, CATEGORIES, EXPENSES, EXCHANGE_RATES } from "@/lib/mock-data";
@@ -51,6 +52,11 @@ const cumulativeData = MONTHLY_DATA.map((d, i) => ({
     )
   ),
 }));
+
+// Find month with highest spending
+const maxGastoMonth = MONTHLY_DATA.reduce((prev, curr) =>
+  curr.gastos > prev.gastos ? curr : prev
+);
 
 const tooltipStyle = {
   contentStyle: {
@@ -93,6 +99,11 @@ const CustomBarTooltip = ({ active, payload, label }: any) => {
           {p.name === "ingresos" ? "Ingresos" : "Gastos"}: {formatK(p.value)}
         </p>
       ))}
+      {payload.length === 2 && (
+        <p style={{ color: "#6b7280", marginTop: "4px", borderTop: "1px solid #252525", paddingTop: "4px" }}>
+          Delta: {formatK(payload[0].value - payload[1].value)}
+        </p>
+      )}
     </div>
   );
 };
@@ -125,6 +136,29 @@ function getFilteredData(period: Period) {
   if (period === "Mes") return MONTHLY_DATA.slice(-1);
   if (period === "Trimestre") return MONTHLY_DATA.slice(-3);
   return MONTHLY_DATA;
+}
+
+// Custom label for bar chart
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function DeltaLabel(props: any) {
+  const { x, y, width, value, index, data } = props;
+  if (!data || index === undefined) return null;
+  const row = data[index];
+  if (!row) return null;
+  const delta = row.ingresos - row.gastos;
+  if (value !== row.ingresos) return null; // only render on ingresos bar
+  return (
+    <text
+      x={x + width / 2}
+      y={y - 6}
+      textAnchor="middle"
+      fill="#6b7280"
+      fontSize={10}
+      fontWeight={500}
+    >
+      +{formatK(delta)}
+    </text>
+  );
 }
 
 export default function AnalyticsPage() {
@@ -179,7 +213,7 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {/* Row 1: Ingresos vs Gastos bar chart */}
+      {/* Row 1: Ingresos vs Gastos — full width, tall (300px) */}
       <div
         style={{
           background: "var(--surface)",
@@ -189,55 +223,92 @@ export default function AnalyticsPage() {
           marginBottom: "20px",
         }}
       >
-        <div style={{ marginBottom: "20px" }}>
-          <h2 style={{ fontSize: "15px", fontWeight: "700" }}>Ingresos vs Gastos</h2>
-          <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
-            Comparativa mensual · {period}
-          </p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px", flexWrap: "wrap", gap: "8px" }}>
+          <div>
+            <h2 style={{ fontSize: "15px", fontWeight: "700" }}>Ingresos vs Gastos</h2>
+            <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
+              Comparativa mensual · {period}
+            </p>
+          </div>
+          {/* Legend */}
+          <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+            {[
+              { color: "#00e87a", label: "Ingresos" },
+              { color: "#ef4444", label: "Gastos" },
+            ].map((l) => (
+              <div key={l.label} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <div style={{ width: "10px", height: "10px", borderRadius: "2px", background: l.color }} />
+                <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>{l.label}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
-        <div style={{ height: "240px" }}>
+        <div style={{ height: "300px" }}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={filteredData} barGap={4} barCategoryGap="30%">
-              <CartesianGrid
-                strokeDasharray="0"
-                stroke="#1d1d1d"
-                vertical={false}
-              />
+            <BarChart data={filteredData} barGap={6} barCategoryGap="28%">
+              <CartesianGrid strokeDasharray="0" stroke="#1d1d1d" vertical={false} />
               <XAxis dataKey="month" {...axisStyle} />
               <YAxis tickFormatter={formatK} {...axisStyle} width={60} />
               <Tooltip content={<CustomBarTooltip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-              <Bar dataKey="ingresos" fill="#00e87a" radius={[4, 4, 0, 0]} maxBarSize={40} />
-              <Bar dataKey="gastos" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={40} />
+              <Bar dataKey="ingresos" fill="#00e87a" radius={[4, 4, 0, 0]} maxBarSize={32}>
+                <LabelList
+                  content={(props) => (
+                    <DeltaLabel {...props} data={filteredData} />
+                  )}
+                />
+              </Bar>
+              <Bar dataKey="gastos" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={32} />
             </BarChart>
           </ResponsiveContainer>
         </div>
-
-        {/* Legend */}
-        <div style={{ display: "flex", gap: "20px", marginTop: "16px", justifyContent: "center" }}>
-          {[
-            { color: "#00e87a", label: "Ingresos" },
-            { color: "#ef4444", label: "Gastos" },
-          ].map((l) => (
-            <div key={l.label} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <div style={{ width: "10px", height: "10px", borderRadius: "2px", background: l.color }} />
-              <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>{l.label}</span>
-            </div>
-          ))}
-        </div>
       </div>
 
-      {/* Row 2: Donut + CCL Line */}
+      {/* Row 2: 3-column grid on desktop — feature stat + donut + CCL */}
       <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: "20px",
-          marginBottom: "20px",
-        }}
-        className="grid-cols-1 md:grid-cols-2"
+        className="grid grid-cols-1 md:grid-cols-3"
+        style={{ gap: "20px", marginBottom: "20px", display: "grid" }}
       >
-        {/* Donut: gastos por categoría */}
+        {/* Col 1 (narrow): Feature stat */}
+        <div
+          style={{
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderRadius: "14px",
+            padding: "24px",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "space-between",
+          }}
+        >
+          <div>
+            <p style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "16px" }}>
+              Mes con mayor gasto
+            </p>
+            <p style={{ fontSize: "36px", fontWeight: "800", color: "var(--error)", letterSpacing: "-0.03em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+              {formatK(maxGastoMonth.gastos)}
+            </p>
+            <p style={{ fontSize: "20px", fontWeight: "700", color: "var(--text-primary)", marginTop: "8px", letterSpacing: "-0.02em" }}>
+              {maxGastoMonth.month} 2026
+            </p>
+          </div>
+          <div
+            style={{
+              marginTop: "20px",
+              padding: "12px 14px",
+              background: "rgba(239,68,68,0.08)",
+              border: "1px solid rgba(239,68,68,0.2)",
+              borderRadius: "8px",
+            }}
+          >
+            <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>vs promedio anual</p>
+            <p style={{ fontSize: "14px", fontWeight: "700", color: "var(--error)", marginTop: "4px", fontVariantNumeric: "tabular-nums" }}>
+              +{formatK(maxGastoMonth.gastos - Math.round(MONTHLY_DATA.reduce((s, m) => s + m.gastos, 0) / MONTHLY_DATA.length))}
+            </p>
+          </div>
+        </div>
+
+        {/* Col 2: Donut chart */}
         <div
           style={{
             background: "var(--surface)",
@@ -253,16 +324,16 @@ export default function AnalyticsPage() {
             </p>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap" }}>
-            <div style={{ width: "160px", height: "160px", flexShrink: 0 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px" }}>
+            <div style={{ width: "180px", height: "180px" }}>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
                     data={categoryDonutData}
                     cx="50%"
                     cy="50%"
-                    innerRadius={50}
-                    outerRadius={72}
+                    innerRadius={56}
+                    outerRadius={82}
                     paddingAngle={3}
                     dataKey="value"
                     strokeWidth={0}
@@ -276,27 +347,20 @@ export default function AnalyticsPage() {
               </ResponsiveContainer>
             </div>
 
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "8px", minWidth: "120px" }}>
+            <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "6px" }}>
               {categoryDonutData
                 .sort((a, b) => b.value - a.value)
+                .slice(0, 4)
                 .map((cat) => {
                   const total = categoryDonutData.reduce((s, c) => s + c.value, 0);
                   const pct = total > 0 ? Math.round((cat.value / total) * 100) : 0;
                   return (
                     <div key={cat.name} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <div
-                        style={{
-                          width: "8px",
-                          height: "8px",
-                          borderRadius: "50%",
-                          background: cat.color,
-                          flexShrink: 0,
-                        }}
-                      />
+                      <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: cat.color, flexShrink: 0 }} />
                       <span style={{ fontSize: "12px", flex: 1, color: "var(--text-primary)" }}>
                         {cat.emoji} {cat.name}
                       </span>
-                      <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>{pct}%</span>
+                      <span style={{ fontSize: "12px", color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>{pct}%</span>
                     </div>
                   );
                 })}
@@ -304,7 +368,7 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-        {/* Line: CCL evolution */}
+        {/* Col 3: CCL line chart */}
         <div
           style={{
             background: "var(--surface)",
@@ -314,13 +378,13 @@ export default function AnalyticsPage() {
           }}
         >
           <div style={{ marginBottom: "16px" }}>
-            <h2 style={{ fontSize: "15px", fontWeight: "700" }}>Evolución del dólar CCL</h2>
+            <h2 style={{ fontSize: "15px", fontWeight: "700" }}>Dólar CCL 2026</h2>
             <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
-              Tipo de cambio contado con liquidación
+              Contado con liquidación
             </p>
           </div>
 
-          <div style={{ height: "200px" }}>
+          <div style={{ height: "220px" }}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={cclData}>
                 <CartesianGrid strokeDasharray="0" stroke="#1d1d1d" vertical={false} />
@@ -328,28 +392,37 @@ export default function AnalyticsPage() {
                 <YAxis
                   {...axisStyle}
                   width={55}
-                  tickFormatter={(v: number) => `$${v.toLocaleString("es-AR")}`}
+                  tickFormatter={(v: number) => `$${Math.round(v / 1000)}k`}
                   domain={["auto", "auto"]}
                 />
                 <Tooltip
                   {...tooltipStyle}
-                  formatter={(v: number) => [`$${v.toLocaleString("es-AR")}`, "CCL"]}
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  formatter={(v: any) => [`$${Number(v).toLocaleString("es-AR")}`, "CCL"]}
                 />
                 <Line
                   type="monotone"
                   dataKey="ccl"
                   stroke="#0ea5e9"
                   strokeWidth={2}
-                  dot={{ fill: "#0ea5e9", r: 4, strokeWidth: 0 }}
-                  activeDot={{ r: 6 }}
+                  dot={{ fill: "#0ea5e9", r: 3, strokeWidth: 0 }}
+                  activeDot={{ r: 5 }}
                 />
               </LineChart>
             </ResponsiveContainer>
           </div>
+
+          {/* Current value callout */}
+          <div style={{ marginTop: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Actual</span>
+            <span style={{ fontSize: "16px", fontWeight: "700", color: "var(--accent-blue)", fontVariantNumeric: "tabular-nums" }}>
+              ${new Intl.NumberFormat("es-AR").format(cclData[cclData.length - 1].ccl)}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Row 3: Cumulative balance */}
+      {/* Row 3: Cumulative balance — full width */}
       <div
         style={{
           background: "var(--surface)",
@@ -361,11 +434,11 @@ export default function AnalyticsPage() {
         <div style={{ marginBottom: "20px" }}>
           <h2 style={{ fontSize: "15px", fontWeight: "700" }}>Balance acumulado</h2>
           <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
-            ARS y USD — ahorro neto acumulado en 2026
+            Ahorro neto acumulado en ARS y USD — 2026
           </p>
         </div>
 
-        <div style={{ height: "220px" }}>
+        <div style={{ height: "240px" }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={cumulativeData}>
               <CartesianGrid strokeDasharray="0" stroke="#1d1d1d" vertical={false} />
@@ -385,10 +458,11 @@ export default function AnalyticsPage() {
               />
               <Tooltip
                 {...tooltipStyle}
-                formatter={(v: number, name: string) =>
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                formatter={(v: any, name: any) =>
                   name === "saldo_ars"
-                    ? [`$${new Intl.NumberFormat("es-AR").format(v)}`, "ARS"]
-                    : [`u$d ${v.toLocaleString("es-AR")}`, "USD"]
+                    ? [`$${new Intl.NumberFormat("es-AR").format(Number(v))}`, "ARS"]
+                    : [`u$d ${Number(v).toLocaleString("es-AR")}`, "USD"]
                 }
               />
               <Legend
@@ -404,8 +478,8 @@ export default function AnalyticsPage() {
                 dataKey="saldo_ars"
                 stroke="#00e87a"
                 strokeWidth={2}
-                dot={{ fill: "#00e87a", r: 4, strokeWidth: 0 }}
-                activeDot={{ r: 6 }}
+                dot={{ fill: "#00e87a", r: 3, strokeWidth: 0 }}
+                activeDot={{ r: 5 }}
               />
               <Line
                 yAxisId="usd"
@@ -413,8 +487,8 @@ export default function AnalyticsPage() {
                 dataKey="saldo_usd"
                 stroke="#0ea5e9"
                 strokeWidth={2}
-                dot={{ fill: "#0ea5e9", r: 4, strokeWidth: 0 }}
-                activeDot={{ r: 6 }}
+                dot={{ fill: "#0ea5e9", r: 3, strokeWidth: 0 }}
+                activeDot={{ r: 5 }}
               />
             </LineChart>
           </ResponsiveContainer>

@@ -1,14 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, X, ChevronDown } from "lucide-react";
+import { Plus, X, ChevronDown, Check } from "lucide-react";
 import {
   CARDS,
   CARD_STATEMENTS,
   INSTALLMENT_PURCHASES,
   CURRENT_CCL,
 } from "@/lib/mock-data";
-import type { InstallmentPurchase } from "@/types/database";
+import type { InstallmentPurchase, Card, CardStatement } from "@/types/database";
 
 function BankInitials({ bank, color }: { bank: string; color: string }) {
   const initials = bank.slice(0, 2).toUpperCase();
@@ -98,7 +98,6 @@ function NewPurchaseModal({
           overflow: "hidden",
         }}
       >
-        {/* Header */}
         <div
           style={{
             display: "flex",
@@ -130,10 +129,8 @@ function NewPurchaseModal({
           </button>
         </div>
 
-        {/* Body */}
         <div style={{ overflowY: "auto", padding: "24px", flex: 1 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-            {/* Descripción */}
             <div>
               <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
                 Descripción
@@ -146,7 +143,6 @@ function NewPurchaseModal({
               />
             </div>
 
-            {/* Moneda */}
             <div>
               <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
                 Moneda
@@ -179,7 +175,6 @@ function NewPurchaseModal({
               </div>
             </div>
 
-            {/* Monto + cuotas */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
               <div>
                 <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
@@ -206,7 +201,6 @@ function NewPurchaseModal({
               </div>
             </div>
 
-            {/* Per installment preview */}
             {perInstallment > 0 && (
               <div
                 style={{
@@ -230,7 +224,6 @@ function NewPurchaseModal({
               </div>
             )}
 
-            {/* Tarjeta */}
             <div>
               <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
                 Tarjeta
@@ -249,7 +242,6 @@ function NewPurchaseModal({
               </div>
             </div>
 
-            {/* Fecha */}
             <div>
               <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
                 Fecha inicio
@@ -261,7 +253,6 @@ function NewPurchaseModal({
               />
             </div>
 
-            {/* Toggle descuenta saldo */}
             <div
               style={{
                 background: "#202020",
@@ -311,7 +302,6 @@ function NewPurchaseModal({
           </div>
         </div>
 
-        {/* Footer */}
         <div style={{ padding: "20px 24px", borderTop: "1px solid var(--border)", display: "flex", gap: "12px" }}>
           <button
             onClick={onClose}
@@ -356,9 +346,188 @@ function NewPurchaseModal({
   );
 }
 
+// Modal to load monthly statement
+function CargarResumenModal({
+  open,
+  card,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  card: Card | null;
+  onClose: () => void;
+  onSave: (cardId: string, amount: number, currency: "ARS" | "USD") => void;
+}) {
+  const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState<"ARS" | "USD">("ARS");
+  const [saved, setSaved] = useState(false);
+
+  if (!open || !card) return null;
+
+  const handleSave = () => {
+    const num = parseFloat(amount);
+    if (!num || num <= 0) return;
+    onSave(card.id, num, currency);
+    setSaved(true);
+    setTimeout(() => {
+      setSaved(false);
+      setAmount("");
+      onClose();
+    }, 1200);
+  };
+
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.7)",
+          zIndex: 100,
+          backdropFilter: "blur(2px)",
+        }}
+      />
+      <div
+        style={{
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: "min(440px, calc(100vw - 32px))",
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: "16px",
+          zIndex: 101,
+          overflow: "hidden",
+        }}
+      >
+        {/* Card color accent */}
+        <div style={{ height: "4px", background: card.color }} />
+
+        <div style={{ padding: "24px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "24px" }}>
+            <div>
+              <h2 style={{ fontSize: "18px", fontWeight: "700" }}>Cargar resumen</h2>
+              <p style={{ fontSize: "13px", color: "var(--text-muted)", marginTop: "4px" }}>
+                {card.name} · {new Date().toLocaleDateString("es-AR", { month: "long", year: "numeric" })}
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              style={{ background: "#252525", border: "none", color: "var(--text-muted)", cursor: "pointer", borderRadius: "6px", width: "32px", height: "32px", display: "flex", alignItems: "center", justifyContent: "center" }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          <p style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "20px", lineHeight: 1.5 }}>
+            Ingresá el monto real del resumen de tarjeta. Este número incluye impuestos y recargos — siempre será mayor a la suma de cuotas base.
+          </p>
+
+          {/* Currency */}
+          <div style={{ marginBottom: "16px" }}>
+            <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Moneda
+            </label>
+            <div style={{ display: "flex", gap: "8px" }}>
+              {(["ARS", "USD"] as const).map((cur) => (
+                <button
+                  key={cur}
+                  onClick={() => setCurrency(cur)}
+                  style={{
+                    flex: 1,
+                    padding: "10px",
+                    borderRadius: "8px",
+                    border: `2px solid ${currency === cur ? card.color : "var(--border)"}`,
+                    background: currency === cur ? `${card.color}12` : "transparent",
+                    color: currency === cur ? card.color : "var(--text-muted)",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "700",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  {cur}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Amount */}
+          <div style={{ marginBottom: "24px" }}>
+            <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Monto del resumen ({currency})
+            </label>
+            <input
+              type="number"
+              placeholder="Ej: 285000"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              style={{ fontSize: "20px", fontWeight: "700" }}
+            />
+          </div>
+
+          {/* Actions */}
+          <div style={{ display: "flex", gap: "12px" }}>
+            <button
+              onClick={onClose}
+              style={{
+                flex: 1,
+                padding: "12px",
+                borderRadius: "8px",
+                background: "transparent",
+                border: "1px solid var(--border)",
+                color: "var(--text-muted)",
+                cursor: "pointer",
+                fontSize: "14px",
+                fontWeight: "500",
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={!amount || parseFloat(amount) <= 0}
+              style={{
+                flex: 2,
+                padding: "12px",
+                borderRadius: "8px",
+                background: saved ? "#1d4731" : card.color,
+                border: "none",
+                color: saved ? "var(--accent-green)" : "#0f0f0f",
+                cursor: !amount || parseFloat(amount) <= 0 ? "not-allowed" : "pointer",
+                fontSize: "14px",
+                fontWeight: "700",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px",
+                transition: "background 0.2s ease",
+                opacity: !amount || parseFloat(amount) <= 0 ? 0.5 : 1,
+              }}
+            >
+              {saved ? (
+                <>
+                  <Check size={16} />
+                  Guardado
+                </>
+              ) : (
+                "Guardar resumen"
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function CuotasPage() {
   const [purchases, setPurchases] = useState<InstallmentPurchase[]>(INSTALLMENT_PURCHASES);
+  const [statements, setStatements] = useState<CardStatement[]>(CARD_STATEMENTS);
   const [modalOpen, setModalOpen] = useState(false);
+  const [resumenModal, setResumenModal] = useState<{ open: boolean; card: Card | null }>({ open: false, card: null });
 
   const activePurchases = purchases.filter(
     (p) => p.paid_installments < p.total_installments
@@ -377,6 +546,19 @@ export default function CuotasPage() {
       counts_towards_balance: data.counts_towards_balance,
     };
     setPurchases((prev) => [newPurchase, ...prev]);
+  };
+
+  const handleSaveResumen = (cardId: string, amount: number, currency: "ARS" | "USD") => {
+    const now = new Date();
+    const newStatement: CardStatement = {
+      id: `cs-${Date.now()}`,
+      card_id: cardId,
+      period_month: now.getMonth() + 1,
+      period_year: now.getFullYear(),
+      amount,
+      currency,
+    };
+    setStatements((prev) => [newStatement, ...prev]);
   };
 
   return (
@@ -425,9 +607,9 @@ export default function CuotasPage() {
         }}
       >
         {CARDS.map((card) => {
-          const latestStatement = CARD_STATEMENTS.filter(
-            (s) => s.card_id === card.id
-          ).sort((a, b) => b.period_month - a.period_month)[0];
+          const latestStatement = statements
+            .filter((s) => s.card_id === card.id)
+            .sort((a, b) => b.period_month - a.period_month)[0];
 
           const activeForCard = purchases.filter(
             (p) => p.card_id === card.id && p.paid_installments < p.total_installments
@@ -455,7 +637,7 @@ export default function CuotasPage() {
                 overflow: "hidden",
               }}
             >
-              {/* Subtle color accent */}
+              {/* Color accent top stripe */}
               <div
                 style={{
                   position: "absolute",
@@ -479,7 +661,7 @@ export default function CuotasPage() {
               <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Último resumen</span>
-                  <span style={{ fontSize: "14px", fontWeight: "700", color: "var(--text-primary)" }}>
+                  <span style={{ fontSize: "14px", fontWeight: "700", color: "var(--text-primary)", fontVariantNumeric: "tabular-nums" }}>
                     {latestStatement
                       ? `$${new Intl.NumberFormat("es-AR").format(latestStatement.amount)}`
                       : "Sin datos"}
@@ -495,25 +677,32 @@ export default function CuotasPage() {
 
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Cuota est. mensual</span>
-                  <span style={{ fontSize: "14px", fontWeight: "600", color: "var(--accent-blue)" }}>
+                  <span style={{ fontSize: "14px", fontWeight: "600", color: "var(--accent-blue)", fontVariantNumeric: "tabular-nums" }}>
                     ${new Intl.NumberFormat("es-AR").format(Math.round(installmentTotal))}
                   </span>
                 </div>
               </div>
 
               <button
+                onClick={() => setResumenModal({ open: true, card })}
                 style={{
                   marginTop: "16px",
                   width: "100%",
-                  padding: "8px",
+                  padding: "9px",
                   borderRadius: "8px",
-                  border: `1px solid ${card.color}40`,
+                  border: `1px solid ${card.color}50`,
                   background: `${card.color}10`,
                   color: card.color,
-                  fontSize: "12px",
+                  fontSize: "13px",
                   fontWeight: "600",
                   cursor: "pointer",
                   transition: "all 0.15s ease",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.background = `${card.color}20`;
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.background = `${card.color}10`;
                 }}
               >
                 Cargar resumen del mes
@@ -604,9 +793,9 @@ export default function CuotasPage() {
                             <div
                               style={{
                                 flex: 1,
-                                height: "4px",
+                                height: "5px",
                                 background: "var(--border)",
-                                borderRadius: "2px",
+                                borderRadius: "3px",
                                 overflow: "hidden",
                               }}
                             >
@@ -615,16 +804,16 @@ export default function CuotasPage() {
                                   height: "100%",
                                   width: `${pct}%`,
                                   background: card?.color ?? "var(--accent-green)",
-                                  borderRadius: "2px",
+                                  borderRadius: "3px",
                                 }}
                               />
                             </div>
-                            <span style={{ fontSize: "12px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                            <span style={{ fontSize: "12px", color: "var(--text-muted)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
                               {p.paid_installments}/{p.total_installments}
                             </span>
                           </div>
                         </td>
-                        <td style={{ textAlign: "right", fontWeight: "600", fontSize: "14px" }}>
+                        <td style={{ textAlign: "right", fontWeight: "600", fontSize: "14px", fontVariantNumeric: "tabular-nums" }}>
                           ${new Intl.NumberFormat("es-AR").format(Math.round(monthlyAmount))}
                           <span style={{ fontSize: "11px", color: "var(--text-muted)", marginLeft: "4px" }}>
                             {p.currency}
@@ -681,17 +870,17 @@ export default function CuotasPage() {
                         </p>
                       </div>
                       <div style={{ textAlign: "right" }}>
-                        <p style={{ fontSize: "15px", fontWeight: "700" }}>
+                        <p style={{ fontSize: "15px", fontWeight: "700", fontVariantNumeric: "tabular-nums" }}>
                           ${new Intl.NumberFormat("es-AR").format(Math.round(monthlyAmount))}
                         </p>
                         <p style={{ fontSize: "11px", color: "var(--text-muted)" }}>por cuota</p>
                       </div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <div style={{ flex: 1, height: "4px", background: "var(--border)", borderRadius: "2px", overflow: "hidden" }}>
-                        <div style={{ height: "100%", width: `${pct}%`, background: card?.color ?? "var(--accent-green)", borderRadius: "2px" }} />
+                      <div style={{ flex: 1, height: "5px", background: "var(--border)", borderRadius: "3px", overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${pct}%`, background: card?.color ?? "var(--accent-green)", borderRadius: "3px" }} />
                       </div>
-                      <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                      <span style={{ fontSize: "12px", color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>
                         {p.paid_installments}/{p.total_installments}
                       </span>
                     </div>
@@ -707,6 +896,13 @@ export default function CuotasPage() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         onSave={handleSave}
+      />
+
+      <CargarResumenModal
+        open={resumenModal.open}
+        card={resumenModal.card}
+        onClose={() => setResumenModal({ open: false, card: null })}
+        onSave={handleSaveResumen}
       />
     </div>
   );

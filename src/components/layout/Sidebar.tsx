@@ -10,6 +10,7 @@ import {
   BarChart3,
   Settings,
 } from "lucide-react";
+import { CURRENT_CCL } from "@/lib/mock-data";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -42,30 +43,25 @@ export function Sidebar() {
       {/* Logo */}
       <div style={{ padding: "0 20px 32px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <div
-            style={{
-              width: "32px",
-              height: "32px",
-              background: "var(--accent-green)",
-              borderRadius: "8px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "16px",
-              flexShrink: 0,
-            }}
-          >
-            $
-          </div>
-          <span
-            style={{
-              fontSize: "18px",
-              fontWeight: "700",
-              color: "var(--text-primary)",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Gastos
+          {/* Custom SVG logo: green circle with white "G" */}
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+            <circle cx="16" cy="16" r="16" fill="#00e87a" />
+            <text
+              x="16"
+              y="22"
+              textAnchor="middle"
+              fontSize="18"
+              fontWeight="800"
+              fontFamily="system-ui, sans-serif"
+              fill="#0f0f0f"
+              letterSpacing="-1"
+            >
+              G
+            </text>
+          </svg>
+          <span style={{ fontSize: "17px", fontWeight: "700", letterSpacing: "-0.02em" }}>
+            <span style={{ color: "var(--text-primary)" }}>gas</span>
+            <span style={{ color: "var(--accent-green)" }}>tos</span>
           </span>
         </div>
       </div>
@@ -114,8 +110,8 @@ export function Sidebar() {
         <p style={{ fontSize: "11px", color: "var(--text-muted)" }}>
           CCL hoy
         </p>
-        <p style={{ fontSize: "16px", fontWeight: "700", color: "var(--accent-blue)", marginTop: "2px" }}>
-          $1.548
+        <p style={{ fontSize: "16px", fontWeight: "700", color: "var(--accent-blue)", marginTop: "2px", fontVariantNumeric: "tabular-nums" }}>
+          ${new Intl.NumberFormat("es-AR").format(CURRENT_CCL)}
         </p>
       </div>
     </aside>

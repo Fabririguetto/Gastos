@@ -50,23 +50,55 @@ interface IncomeFormData {
   ccl_rate: string;
 }
 
-function AddIncomeDrawer({
+function IncomeDrawer({
   open,
   onClose,
   onSave,
+  editingIncome,
 }: {
   open: boolean;
   onClose: () => void;
-  onSave: (data: IncomeFormData) => void;
+  onSave: (data: IncomeFormData, editingId?: string) => void;
+  editingIncome?: Income | null;
 }) {
-  const [form, setForm] = useState<IncomeFormData>({
+  const defaultForm: IncomeFormData = {
     date: new Date().toISOString().split("T")[0],
     category_id: incomeCategories[0]?.id ?? "",
     detail: "",
     currency: "ARS",
     amount: "",
     ccl_rate: String(CURRENT_CCL),
-  });
+  };
+
+  const [form, setForm] = useState<IncomeFormData>(
+    editingIncome
+      ? {
+          date: editingIncome.date,
+          category_id: editingIncome.category_id,
+          detail: editingIncome.detail,
+          currency: editingIncome.currency as "ARS" | "USD",
+          amount: String(editingIncome.amount),
+          ccl_rate: String(editingIncome.ccl_rate),
+        }
+      : defaultForm
+  );
+
+  const [lastEditing, setLastEditing] = useState<string | undefined>(editingIncome?.id);
+  if (editingIncome?.id !== lastEditing) {
+    setLastEditing(editingIncome?.id);
+    if (editingIncome) {
+      setForm({
+        date: editingIncome.date,
+        category_id: editingIncome.category_id,
+        detail: editingIncome.detail,
+        currency: editingIncome.currency as "ARS" | "USD",
+        amount: String(editingIncome.amount),
+        ccl_rate: String(editingIncome.ccl_rate),
+      });
+    } else {
+      setForm(defaultForm);
+    }
+  }
 
   const amountNum = parseFloat(form.amount) || 0;
   const cclNum = parseFloat(form.ccl_rate) || CURRENT_CCL;
@@ -77,6 +109,8 @@ function AddIncomeDrawer({
       : `≈ $${Math.round(amountNum * cclNum).toLocaleString("es-AR")} ARS @ $${cclNum.toLocaleString("es-AR")} CCL`;
 
   if (!open) return null;
+
+  const isEditing = !!editingIncome;
 
   return (
     <>
@@ -102,6 +136,7 @@ function AddIncomeDrawer({
           zIndex: 101,
           display: "flex",
           flexDirection: "column",
+          animation: "slideUp 0.25s ease-out",
         }}
       >
         <div
@@ -113,7 +148,16 @@ function AddIncomeDrawer({
             borderBottom: "1px solid var(--border)",
           }}
         >
-          <h2 style={{ fontSize: "18px", fontWeight: "700" }}>Agregar ingreso</h2>
+          <div>
+            <h2 style={{ fontSize: "18px", fontWeight: "700" }}>
+              {isEditing ? "Editar ingreso" : "Agregar ingreso"}
+            </h2>
+            {isEditing && (
+              <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}>
+                Modificá los datos del ingreso
+              </p>
+            )}
+          </div>
           <button
             onClick={onClose}
             style={{
@@ -245,7 +289,7 @@ function AddIncomeDrawer({
           <button
             onClick={() => {
               if (form.detail && form.amount) {
-                onSave(form);
+                onSave(form, editingIncome?.id);
                 onClose();
               }
             }}
@@ -261,7 +305,7 @@ function AddIncomeDrawer({
               fontWeight: "700",
             }}
           >
-            Guardar ingreso
+            {isEditing ? "Actualizar ingreso" : "Guardar ingreso"}
           </button>
         </div>
       </div>
@@ -272,6 +316,7 @@ function AddIncomeDrawer({
 export default function IngresosPage() {
   const [incomes, setIncomes] = useState<Income[]>(INCOMES);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editingIncome, setEditingIncome] = useState<Income | null>(null);
   const [selectedMonth, setSelectedMonth] = useState("2026-08");
   const [selectedCategory, setSelectedCategory] = useState("all");
 
@@ -283,22 +328,58 @@ export default function IngresosPage() {
 
   const total = filtered.reduce((s, i) => s + i.amount_ars, 0);
 
-  const handleSave = (data: IncomeFormData) => {
+  const openAdd = () => {
+    setEditingIncome(null);
+    setDrawerOpen(true);
+  };
+
+  const openEdit = (income: Income) => {
+    setEditingIncome(income);
+    setDrawerOpen(true);
+  };
+
+  const handleClose = () => {
+    setDrawerOpen(false);
+    setEditingIncome(null);
+  };
+
+  const handleSave = (data: IncomeFormData, editingId?: string) => {
     const ccl = parseFloat(data.ccl_rate) || CURRENT_CCL;
     const amount = parseFloat(data.amount) || 0;
-    const newIncome: Income = {
-      id: `i-${Date.now()}`,
-      date: data.date,
-      category_id: data.category_id,
-      detail: data.detail,
-      amount,
-      currency: data.currency,
-      amount_ars: data.currency === "ARS" ? amount : amount * ccl,
-      amount_usd: data.currency === "USD" ? amount : amount / ccl,
-      ccl_rate: ccl,
-      created_at: new Date().toISOString(),
-    };
-    setIncomes((prev) => [newIncome, ...prev]);
+
+    if (editingId) {
+      setIncomes((prev) =>
+        prev.map((i) =>
+          i.id === editingId
+            ? {
+                ...i,
+                date: data.date,
+                category_id: data.category_id,
+                detail: data.detail,
+                amount,
+                currency: data.currency,
+                amount_ars: data.currency === "ARS" ? amount : amount * ccl,
+                amount_usd: data.currency === "USD" ? amount : amount / ccl,
+                ccl_rate: ccl,
+              }
+            : i
+        )
+      );
+    } else {
+      const newIncome: Income = {
+        id: `i-${Date.now()}`,
+        date: data.date,
+        category_id: data.category_id,
+        detail: data.detail,
+        amount,
+        currency: data.currency,
+        amount_ars: data.currency === "ARS" ? amount : amount * ccl,
+        amount_usd: data.currency === "USD" ? amount : amount / ccl,
+        ccl_rate: ccl,
+        created_at: new Date().toISOString(),
+      };
+      setIncomes((prev) => [newIncome, ...prev]);
+    }
   };
 
   const handleDelete = (id: string) => {
@@ -319,7 +400,7 @@ export default function IngresosPage() {
           </p>
         </div>
         <button
-          onClick={() => setDrawerOpen(true)}
+          onClick={openAdd}
           style={{
             display: "flex",
             alignItems: "center",
@@ -420,18 +501,43 @@ export default function IngresosPage() {
                     <td>
                       <span style={{ fontSize: "13px" }}>{income.detail}</span>
                     </td>
-                    <td style={{ textAlign: "right", fontWeight: "600", fontSize: "14px", color: "var(--accent-green)" }}>
+                    <td style={{ textAlign: "right", fontWeight: "600", fontSize: "14px", color: "var(--accent-green)", fontVariantNumeric: "tabular-nums" }}>
                       +${new Intl.NumberFormat("es-AR").format(income.amount_ars)}
                     </td>
-                    <td style={{ textAlign: "right", fontSize: "13px", color: "var(--accent-blue)" }}>
+                    <td style={{ textAlign: "right", fontSize: "13px", color: "var(--accent-blue)", fontVariantNumeric: "tabular-nums" }}>
                       u$d {income.amount_usd < 10 ? income.amount_usd.toFixed(1) : Math.round(income.amount_usd)}
                     </td>
                     <td style={{ textAlign: "right" }}>
                       <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-                        <button style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "4px" }}>
+                        <button
+                          onClick={() => openEdit(income)}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            color: "var(--text-muted)",
+                            cursor: "pointer",
+                            padding: "6px",
+                            borderRadius: "6px",
+                            transition: "color 0.15s ease, background 0.15s ease",
+                          }}
+                          title="Editar ingreso"
+                          onMouseEnter={(e) => {
+                            (e.currentTarget as HTMLButtonElement).style.color = "var(--accent-green)";
+                            (e.currentTarget as HTMLButtonElement).style.background = "rgba(0,232,122,0.08)";
+                          }}
+                          onMouseLeave={(e) => {
+                            (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)";
+                            (e.currentTarget as HTMLButtonElement).style.background = "none";
+                          }}
+                        >
                           <Pencil size={14} />
                         </button>
-                        <button onClick={() => handleDelete(income.id)} style={{ background: "none", border: "none", color: "var(--error)", cursor: "pointer", padding: "4px", opacity: 0.7 }}>
+                        <button
+                          onClick={() => handleDelete(income.id)}
+                          style={{ background: "none", border: "none", color: "var(--error)", cursor: "pointer", padding: "6px", opacity: 0.7 }}
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.7"; }}
+                        >
                           <Trash2 size={14} />
                         </button>
                       </div>
@@ -481,19 +587,27 @@ export default function IngresosPage() {
                     </p>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <p style={{ fontSize: "15px", fontWeight: "700", color: "var(--accent-green)" }}>
+                    <p style={{ fontSize: "15px", fontWeight: "700", color: "var(--accent-green)", fontVariantNumeric: "tabular-nums" }}>
                       +${new Intl.NumberFormat("es-AR").format(income.amount_ars)}
                     </p>
-                    <p style={{ fontSize: "11px", color: "var(--accent-blue)", marginTop: "2px" }}>
+                    <p style={{ fontSize: "11px", color: "var(--accent-blue)", marginTop: "2px", fontVariantNumeric: "tabular-nums" }}>
                       u$d {Math.round(income.amount_usd)}
                     </p>
                   </div>
-                  <button
-                    onClick={() => handleDelete(income.id)}
-                    style={{ background: "none", border: "none", color: "var(--error)", cursor: "pointer", padding: "4px", opacity: 0.6, flexShrink: 0 }}
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                  <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+                    <button
+                      onClick={() => openEdit(income)}
+                      style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "4px" }}
+                    >
+                      <Pencil size={16} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(income.id)}
+                      style={{ background: "none", border: "none", color: "var(--error)", cursor: "pointer", padding: "4px", opacity: 0.6 }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -501,10 +615,15 @@ export default function IngresosPage() {
         </>
       )}
 
-      <AddIncomeDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} onSave={handleSave} />
+      <IncomeDrawer
+        open={drawerOpen}
+        onClose={handleClose}
+        onSave={handleSave}
+        editingIncome={editingIncome}
+      />
 
       <button
-        onClick={() => setDrawerOpen(true)}
+        onClick={openAdd}
         className="md:hidden"
         style={{
           position: "fixed",
