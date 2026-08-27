@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   TrendingDown,
@@ -9,8 +9,10 @@ import {
   CreditCard,
   BarChart3,
   Settings,
+  LogOut,
 } from "lucide-react";
 import { CURRENT_CCL } from "@/lib/mock-data";
+import { createClient } from "@/lib/supabase/client";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -23,6 +25,14 @@ const NAV_ITEMS = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    const sb = createClient();
+    await sb.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  };
 
   return (
     <aside
@@ -37,6 +47,7 @@ export function Sidebar() {
         position: "sticky",
         top: 0,
         height: "100vh",
+        minHeight: "100%",
         zIndex: 10,
       }}
     >
@@ -94,6 +105,38 @@ export function Sidebar() {
         <p style={{ fontSize: "16px", fontWeight: "700", color: "var(--accent-blue)", marginTop: "2px", fontVariantNumeric: "tabular-nums" }}>
           ${new Intl.NumberFormat("es-AR").format(CURRENT_CCL)}
         </p>
+        <button
+          onClick={handleLogout}
+          style={{
+            marginTop: "16px",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            width: "100%",
+            padding: "8px 10px",
+            borderRadius: "7px",
+            border: "1px solid var(--border)",
+            background: "transparent",
+            color: "var(--text-muted)",
+            fontSize: "13px",
+            fontWeight: "500",
+            cursor: "pointer",
+            transition: "all 0.15s ease",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = "var(--error)";
+            e.currentTarget.style.borderColor = "rgba(239,68,68,0.4)";
+            e.currentTarget.style.background = "rgba(239,68,68,0.06)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = "var(--text-muted)";
+            e.currentTarget.style.borderColor = "var(--border)";
+            e.currentTarget.style.background = "transparent";
+          }}
+        >
+          <LogOut size={14} />
+          Cerrar sesión
+        </button>
       </div>
     </aside>
   );

@@ -24,11 +24,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es">
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         <ToastProvider>
-          <div style={{ display: "flex", minHeight: "100vh", alignItems: "flex-start" }}>
+          <div style={{ display: "flex", minHeight: "100vh" }}>
             <div className="hidden md:block">
               <Sidebar />
             </div>
-            <main style={{ flex: 1, minWidth: 0, overflowX: "hidden" }} className="pb-20 md:pb-0">
+            <main style={{ flex: 1, minWidth: 0, overflowX: "hidden" }} className="mobile-safe-bottom md:pb-0">
               {children}
             </main>
           </div>

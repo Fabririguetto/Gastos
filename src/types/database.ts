@@ -54,6 +54,7 @@ export interface InstallmentPurchase {
   id: string;
   description: string;
   card_id: string;
+  category_id?: string | null;
   total_amount: number;
   paid_amount?: number;
   currency: "ARS" | "USD";
@@ -63,7 +64,7 @@ export interface InstallmentPurchase {
   end_date?: string;
   counts_towards_balance: boolean;
   expense_id?: string;
-  created_at: string;
+  created_at?: string;
 }
 
 export interface CardStatement {
