@@ -27,28 +27,29 @@ export async function GET(req: NextRequest) {
   const to   = `${year}-${String(month).padStart(2, "0")}-31`;
 
   // ── Fetch data ──────────────────────────────────────────────
-  const [expensesRes, incomesRes, categoriesRes, purchasesRes] = await Promise.all([
+  const [expensesRes, incomesRes, allExpensesRes, allIncomesRes, categoriesRes, allPurchasesRes] = await Promise.all([
     sb.from("expenses").select("amount_ars, category_id").gte("date", from).lte("date", to),
     sb.from("incomes").select("amount_ars").gte("date", from).lte("date", to),
+    sb.from("expenses").select("amount_ars"),
+    sb.from("incomes").select("amount_ars"),
     sb.from("categories").select("id, name, emoji, color").eq("type", "expense"),
     sb.from("installment_purchases")
-      .select("description, total_amount, paid_amount, total_installments, paid_installments, currency")
-      .lt("paid_installments", sb.from("installment_purchases").select("total_installments") as unknown as string),
+      .select("description, total_amount, paid_amount, total_installments, paid_installments, currency"),
   ]);
 
-  const expenses  = expensesRes.data ?? [];
-  const incomes   = incomesRes.data ?? [];
-  const cats      = categoriesRes.data ?? [];
-
-  // Active purchases (paid < total)
-  const { data: allPurchases } = await sb
-    .from("installment_purchases")
-    .select("description, total_amount, paid_amount, total_installments, paid_installments, currency");
-  const activePurchases = (allPurchases ?? []).filter(p => p.paid_installments < p.total_installments);
+  const expenses       = expensesRes.data ?? [];
+  const incomes        = incomesRes.data ?? [];
+  const cats           = categoriesRes.data ?? [];
+  const allPurchases   = allPurchasesRes.data ?? [];
+  const activePurchases = allPurchases.filter(p => p.paid_installments < p.total_installments);
 
   const totalGastos   = expenses.reduce((s, e) => s + Number(e.amount_ars), 0);
   const totalIngresos = incomes.reduce((s, i) => s + Number(i.amount_ars), 0);
-  const saldo         = totalIngresos - totalGastos;
+
+  // Saldo histórico: all-time ingresos - all-time gastos
+  const histIngresos = (allIncomesRes.data ?? []).reduce((s, i) => s + Number(i.amount_ars), 0);
+  const histGastos   = (allExpensesRes.data ?? []).reduce((s, e) => s + Number(e.amount_ars), 0);
+  const saldo        = histIngresos - histGastos;
 
   // Top categories
   const catTotals: Record<string, number> = {};
@@ -135,7 +136,7 @@ export async function GET(req: NextRequest) {
                 <p style="margin:6px 0 0;font-size:24px;font-weight:700;color:#ef4444;font-variant-numeric:tabular-nums;">$${fmt(totalGastos)}</p>
               </td>
               <td style="text-align:center;padding:0 8px;">
-                <p style="margin:0;font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.08em;">Saldo</p>
+                <p style="margin:0;font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.08em;">Balance</p>
                 <p style="margin:6px 0 0;font-size:24px;font-weight:700;color:${saldoColor};font-variant-numeric:tabular-nums;">${saldo >= 0 ? "+" : ""}$${fmt(saldo)}</p>
               </td>
             </tr>
