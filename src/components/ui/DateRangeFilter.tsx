@@ -32,6 +32,15 @@ export function historicRange(): DateRange {
   return { from: "2000-01-01", to: "2099-12-31" };
 }
 
+function addMonths(dateStr: string, months: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(y, m - 1 + months, d);
+  const yy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
 const PRESETS = [
   { label: "Este mes", range: currentMonthRange },
   { label: "Mes ant.", range: prevMonthRange },
@@ -89,14 +98,22 @@ export function DateRangeFilter({ value, onChange }: Props) {
         <input
           type="date"
           value={value.from}
-          onChange={(e) => onChange({ ...value, from: e.target.value })}
+          onChange={(e) => {
+            const from = e.target.value;
+            const to = from > value.to ? addMonths(from, 1) : value.to;
+            onChange({ from, to });
+          }}
           style={{ padding: "6px 10px", fontSize: "13px", width: "140px" }}
         />
         <span style={{ fontSize: "13px", color: "var(--text-muted)" }}>→</span>
         <input
           type="date"
           value={value.to}
-          onChange={(e) => onChange({ ...value, to: e.target.value })}
+          onChange={(e) => {
+            const to = e.target.value;
+            const from = to < value.from ? addMonths(to, -1) : value.from;
+            onChange({ from, to });
+          }}
           style={{ padding: "6px 10px", fontSize: "13px", width: "140px" }}
         />
       </div>
