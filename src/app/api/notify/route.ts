@@ -30,8 +30,8 @@ export async function GET(req: NextRequest) {
   const [expensesRes, incomesRes, allExpensesRes, allIncomesRes, categoriesRes, allPurchasesRes] = await Promise.all([
     sb.from("expenses").select("amount_ars, category_id").gte("date", from).lte("date", to),
     sb.from("incomes").select("amount_ars").gte("date", from).lte("date", to),
-    sb.from("expenses").select("amount_ars"),
-    sb.from("incomes").select("amount_ars"),
+    sb.from("expenses").select("amount_ars").lte("date", to),
+    sb.from("incomes").select("amount_ars").lte("date", to),
     sb.from("categories").select("id, name, emoji, color").eq("type", "expense"),
     sb.from("installment_purchases")
       .select("description, total_amount, paid_amount, total_installments, paid_installments, currency"),
