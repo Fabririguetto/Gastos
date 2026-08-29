@@ -220,7 +220,11 @@ export default function AnalyticsPage() {
           const [, mm] = key.split("-").map(Number);
           return { dateKey: key, month: MONTH_SHORT[mm - 1], consumo, cuotaPeriodo, cuotaMia };
         });
-        setCuotasData(cuotasRows);
+        // Recortar meses sin datos al inicio y al final, igual que ingresos vs gastos
+        const hasData = (r: CuotasRow) => r.consumo > 0 || r.cuotaPeriodo > 0 || r.cuotaMia > 0;
+        const firstIdx = cuotasRows.findIndex(hasData);
+        const lastIdx = cuotasRows.length - 1 - [...cuotasRows].reverse().findIndex(hasData);
+        setCuotasData(firstIdx === -1 ? [] : cuotasRows.slice(firstIdx, lastIdx + 1));
 
     } finally {
       setLoading(false);
