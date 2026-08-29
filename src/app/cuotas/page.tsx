@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Plus, X, ChevronDown, Check, Search, Pencil, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/Toast";
-import { DateRangeFilter, DateRange, currentMonthRange } from "@/components/ui/DateRangeFilter";
+import { DateRangeFilter, DateRange, nextMonthRange } from "@/components/ui/DateRangeFilter";
 import type { InstallmentPurchase, Card, CardStatement, Category } from "@/types/database";
 
 function BankInitials({ bank, color }: { bank: string; color: string }) {
@@ -375,7 +375,7 @@ export default function CuotasPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [resumenModal, setResumenModal] = useState<{ open: boolean; card: Card | null }>({ open: false, card: null });
   const [searchQuery, setSearchQuery] = useState("");
-  const [dateRange, setDateRange] = useState<DateRange>(currentMonthRange());
+  const [dateRange, setDateRange] = useState<DateRange>(nextMonthRange());
   const [sortKey, setSortKey] = useState<"description" | "start_date" | "progress" | "amount">("start_date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 

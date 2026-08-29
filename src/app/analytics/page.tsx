@@ -4,10 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, LineChart, Line, CartesianGrid, LabelList, Legend,
+  ComposedChart,
 } from "recharts";
 import { createClient } from "@/lib/supabase/client";
 import { DateRangeFilter, DateRange, thisYearRange } from "@/components/ui/DateRangeFilter";
-import type { Category } from "@/types/database";
+import type { Category, InstallmentPurchase } from "@/types/database";
 
 const MONTH_SHORT = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
 
@@ -76,6 +77,40 @@ function DeltaLabel(props: any) {
 interface MonthRow { dateKey: string; month: string; ingresos: number; gastos: number; ccl: number; }
 interface CategoryRow { name: string; emoji: string; color: string; value: number; }
 interface CclRow { date: string; ccl: number; }
+interface CuotasRow { dateKey: string; month: string; consumo: number; cuotaPeriodo: number; cuotaMia: number; }
+
+function monthsInRange(from: string, to: string): string[] {
+  const [fy, fm] = from.split("-").map(Number);
+  const [ty, tm] = to.split("-").map(Number);
+  const months: string[] = [];
+  let y = fy, m = fm;
+  while (y < ty || (y === ty && m <= tm)) {
+    months.push(`${y}-${String(m).padStart(2, "0")}`);
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+  return months;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const CustomCuotasTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload?.length) return null;
+  const LABELS: Record<string, string> = {
+    consumo: "Consumo del mes",
+    cuotaPeriodo: "Cuotas del período",
+    cuotaMia: "Cuotas abonadas por mí",
+  };
+  return (
+    <div style={{ background: "#1a1a1a", border: "1px solid #252525", borderRadius: "8px", padding: "10px 14px", fontSize: "13px" }}>
+      <p style={{ color: "#6b7280", marginBottom: "6px", fontWeight: 600 }}>{label}</p>
+      {payload.map((p: { dataKey: string; value: number; color: string }) => (
+        <p key={p.dataKey} style={{ color: p.color, marginBottom: "2px" }}>
+          {LABELS[p.dataKey] ?? p.dataKey}: {formatK(p.value)}
+        </p>
+      ))}
+    </div>
+  );
+};
 
 export default function AnalyticsPage() {
   const [isMobile, setIsMobile] = useState(false);
@@ -85,6 +120,7 @@ export default function AnalyticsPage() {
   const [monthlyData, setMonthlyData] = useState<MonthRow[]>([]);
   const [categoryData, setCategoryData] = useState<CategoryRow[]>([]);
   const [cclData, setCclData] = useState<CclRow[]>([]);
+  const [cuotasData, setCuotasData] = useState<CuotasRow[]>([]);
 
   const sb = createClient();
 
@@ -99,17 +135,19 @@ export default function AnalyticsPage() {
     setLoading(true);
     try {
       const { from, to } = dateRange;
-      const [expRes, incRes, catRes, rateRes] = await Promise.all([
+      const [expRes, incRes, catRes, rateRes, instRes] = await Promise.all([
         sb.from("expenses").select("date,amount_ars,category_id").gte("date", from).lte("date", to),
         sb.from("incomes").select("date,amount_ars").gte("date", from).lte("date", to),
         sb.from("categories").select("*").eq("type", "expense"),
         sb.from("exchange_rates").select("date,ccl_rate").gte("date", from).lte("date", to).order("date", { ascending: true }),
+        sb.from("installment_purchases").select("*"),
       ]);
 
         const expenses = expRes.data ?? [];
         const incomes = incRes.data ?? [];
         const categories: Category[] = catRes.data ?? [];
         const rates = rateRes.data ?? [];
+        const purchases: InstallmentPurchase[] = instRes.data ?? [];
 
         // Build monthly aggregates
         const monthMap: Record<string, { ingresos: number; gastos: number; ccl: number }> = {};
@@ -162,6 +200,27 @@ export default function AnalyticsPage() {
         const cclByMonth: Record<string, number> = {};
         for (const r of cclRows) cclByMonth[r.date] = r.ccl;
         setCclData(Object.entries(cclByMonth).sort().map(([date, ccl]) => ({ date, ccl })));
+
+        // Cuotas evolution — consumo mensual, cuota del período y cuota mía
+        const lastKnownCcl = rates.length > 0 ? Number(rates[rates.length - 1].ccl_rate) : 1548;
+        const cuotasMonthKeys = monthsInRange(from, to);
+        const cuotasRows: CuotasRow[] = cuotasMonthKeys.map((key) => {
+          const rate = cclByMonth[key] ?? lastKnownCcl;
+          let consumo = 0, cuotaPeriodo = 0, cuotaMia = 0;
+          for (const p of purchases) {
+            const startKey = p.start_date.slice(0, 7);
+            const endKey = (p.end_date ?? p.start_date).slice(0, 7);
+            const toArs = (v: number) => (p.currency === "USD" ? v * rate : v);
+            if (startKey === key) consumo += toArs(Number(p.total_amount));
+            if (startKey <= key && key <= endKey) {
+              cuotaPeriodo += toArs(Number(p.total_amount) / p.total_installments);
+              cuotaMia += toArs(Number(p.paid_amount ?? p.total_amount) / p.total_installments);
+            }
+          }
+          const [, mm] = key.split("-").map(Number);
+          return { dateKey: key, month: MONTH_SHORT[mm - 1], consumo, cuotaPeriodo, cuotaMia };
+        });
+        setCuotasData(cuotasRows);
 
     } finally {
       setLoading(false);
@@ -244,6 +303,43 @@ export default function AnalyticsPage() {
                     </Bar>
                     <Bar dataKey="gastos" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={32} />
                   </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+
+          {/* Row 1.5: Evolución de cuotas */}
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "14px", padding: "24px", marginBottom: "24px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px", flexWrap: "wrap", gap: "8px" }}>
+              <div>
+                <h2 style={{ fontSize: "15px", fontWeight: "700" }}>Evolución de cuotas</h2>
+                <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>Consumo mensual vs. cuotas del período</p>
+              </div>
+              <div style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap" }}>
+                {[
+                  { color: "#a78bfa", label: "Consumo del mes" },
+                  { color: "#0ea5e9", label: "Cuotas del período" },
+                  { color: "#00e87a", label: "Cuotas abonadas por mí" },
+                ].map((l) => (
+                  <div key={l.label} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <div style={{ width: "10px", height: "10px", borderRadius: "2px", background: l.color }} />
+                    <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>{l.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ height: "300px" }}>
+              {cuotasData.length === 0 ? empty : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={cuotasData} barCategoryGap="28%">
+                    <CartesianGrid strokeDasharray="0" stroke="#1d1d1d" vertical={false} />
+                    <XAxis dataKey="month" {...axisStyle} />
+                    <YAxis tickFormatter={formatK} {...axisStyle} width={60} />
+                    <Tooltip content={<CustomCuotasTooltip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+                    <Bar dataKey="consumo" fill="#a78bfa" radius={[4, 4, 0, 0]} maxBarSize={32} />
+                    <Line type="monotone" dataKey="cuotaPeriodo" stroke="#0ea5e9" strokeWidth={2} dot={{ fill: "#0ea5e9", r: 3, strokeWidth: 0 }} activeDot={{ r: 5 }} />
+                    <Line type="monotone" dataKey="cuotaMia" stroke="#00e87a" strokeWidth={2} dot={{ fill: "#00e87a", r: 3, strokeWidth: 0 }} activeDot={{ r: 5 }} />
+                  </ComposedChart>
                 </ResponsiveContainer>
               )}
             </div>

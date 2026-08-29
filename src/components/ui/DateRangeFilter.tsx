@@ -23,6 +23,15 @@ function prevMonthRange(): DateRange {
   return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${String(lastDay).padStart(2, "0")}` };
 }
 
+export function nextMonthRange(): DateRange {
+  const now = new Date();
+  const y = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
+  const m = now.getMonth() === 11 ? 1 : now.getMonth() + 2;
+  const lastDay = new Date(y, m, 0).getDate();
+  const mm = String(m).padStart(2, "0");
+  return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${String(lastDay).padStart(2, "0")}` };
+}
+
 export function thisYearRange(): DateRange {
   const y = new Date().getFullYear();
   return { from: `${y}-01-01`, to: `${y}-12-31` };
@@ -42,8 +51,9 @@ function addMonths(dateStr: string, months: number): string {
 }
 
 const PRESETS = [
-  { label: "Este mes", range: currentMonthRange },
   { label: "Mes ant.", range: prevMonthRange },
+  { label: "Este mes", range: currentMonthRange },
+  { label: "Próx. mes", range: nextMonthRange },
   { label: "Este año", range: thisYearRange },
   { label: "Histórico", range: historicRange },
 ] as const;

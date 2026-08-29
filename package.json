@@ -31,6 +31,10 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4.3.3",
     "eslint": "^9.39.5",
