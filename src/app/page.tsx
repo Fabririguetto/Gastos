@@ -1,41 +1,40 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { TrendingUp, TrendingDown, CreditCard, ArrowUpRight, Plus, ArrowUp, ArrowDown } from "lucide-react";
+import { TrendingUp, TrendingDown, CreditCard, Calendar, ArrowUpRight, Plus, ArrowUp, ArrowDown } from "lucide-react";
 import { DonutChart } from "@/components/charts/DonutChart";
 import { useCountUp } from "@/hooks/useCountUp";
 import { createClient } from "@/lib/supabase/client";
 import { DateRangeFilter, DateRange, currentMonthRange, historicRange } from "@/components/ui/DateRangeFilter";
-import type { Category, Card, Expense, Income, InstallmentPurchase } from "@/types/database";
+import type { Category, Expense, Income, InstallmentPurchase } from "@/types/database";
 
 const MONTH_NAMES_SHORT = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
 
-function getNextMonths(baseKey: string, count: number) {
-  const [baseYear, baseMonth] = baseKey.split("-").map(Number);
-  return Array.from({ length: count }, (_, i) => {
-    const totalMonths = baseMonth + i + 1;
-    const year = baseYear + Math.floor((totalMonths - 1) / 12);
-    const month = ((totalMonths - 1) % 12) + 1;
-    const dateKey = `${year}-${String(month).padStart(2, "0")}`;
-    return { dateKey, label: `${MONTH_NAMES_SHORT[month - 1]} ${year}` };
-  });
+// Las cuotas se etiquetan por mes de pago (start_date), no por mes de cierre: una compra
+// hecha en agosto se paga en septiembre. El filtro de fecha trabaja en meses de calendario,
+// así que hay que traducir "mes calendario elegido" -> "mes de pago" sumando 1.
+function addOneMonth(monthKey: string): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  const total = y * 12 + (m - 1) + 1;
+  const year = Math.floor(total / 12);
+  const month = (total % 12) + 1;
+  return `${year}-${String(month).padStart(2, "0")}`;
 }
 
 function computeInstallmentsForMonth(dateKey: string, purchases: InstallmentPurchase[]) {
   const [year, month] = dateKey.split("-").map(Number);
-  const byCard: Record<string, number> = {};
-  let total = 0;
+  let totalArs = 0, totalUsd = 0, mioArs = 0, mioUsd = 0;
   for (const p of purchases) {
     const [sy, sm] = p.start_date.split("-").map(Number);
     const monthsFromStart = (year - sy) * 12 + (month - sm);
     if (monthsFromStart >= 0 && monthsFromStart < p.total_installments) {
-      const base = Number(p.paid_amount ?? p.total_amount);
-      const perInstallment = base / p.total_installments;
-      byCard[p.card_id] = (byCard[p.card_id] ?? 0) + perInstallment;
-      total += perInstallment;
+      const totalPer = Number(p.total_amount) / p.total_installments;
+      const mioPer = Number(p.paid_amount ?? p.total_amount) / p.total_installments;
+      if (p.currency === "USD") { totalUsd += totalPer; mioUsd += mioPer; }
+      else { totalArs += totalPer; mioArs += mioPer; }
     }
   }
-  return { byCard, total };
+  return { totalArs, totalUsd, mioArs, mioUsd };
 }
 
 function AnimatedNumber({ value, prefix = "$", decimals = 0 }: { value: number; prefix?: string; decimals?: number }) {
@@ -47,22 +46,68 @@ function AnimatedNumber({ value, prefix = "$", decimals = 0 }: { value: number; 
   return <span>{value < 0 ? "−" : ""}{prefix}{formatted}</span>;
 }
 
-function StatCard({ label, value, usdValue, icon, iconBg, accentColor }: {
-  label: string; value: number; usdValue: number; icon: React.ReactNode; iconBg: string; accentColor?: string;
+function StatCard({ label, value, usdValue, icon, iconBg, accentColor, tooltip, decimals = 0 }: {
+  label: string; value: number; usdValue: number; icon: React.ReactNode; iconBg: string; accentColor?: string; tooltip?: string; decimals?: number;
 }) {
   const [hovered, setHovered] = useState(false);
   return (
-    <div onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderLeft: hovered ? `2px solid ${accentColor ?? "var(--accent-green)"}` : "2px solid transparent", borderRadius: "12px", padding: "20px", transition: "border-left-color 0.2s ease, box-shadow 0.2s ease", boxShadow: hovered ? `0 0 20px ${accentColor ?? "var(--accent-green)"}18` : "none", cursor: "default" }}>
+    <div onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={{ position: "relative", background: "var(--surface)", border: "1px solid var(--border)", borderLeft: hovered ? `2px solid ${accentColor ?? "var(--accent-green)"}` : "2px solid transparent", borderRadius: "12px", padding: "20px", transition: "border-left-color 0.2s ease, box-shadow 0.2s ease", boxShadow: hovered ? `0 0 20px ${accentColor ?? "var(--accent-green)"}18` : "none", cursor: "default" }}>
+      {tooltip && hovered && (
+        <div style={{ position: "absolute", left: "12px", right: "12px", bottom: "calc(100% + 8px)", background: "#1a1a1a", border: "1px solid var(--border)", borderRadius: "8px", padding: "10px 12px", fontSize: "12px", lineHeight: 1.4, color: "var(--text-muted)", boxShadow: "0 8px 24px rgba(0,0,0,0.4)", zIndex: 10 }}>
+          {tooltip}
+        </div>
+      )}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "14px" }}>
         <span style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</span>
         <div style={{ width: "32px", height: "32px", background: iconBg, borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center" }}>{icon}</div>
       </div>
       <p style={{ fontSize: "24px", fontWeight: "800", color: accentColor ?? "var(--text-primary)", letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
-        $<AnimatedNumber value={value} prefix="" />
+        $<AnimatedNumber value={value} prefix="" decimals={decimals} />
       </p>
       <p style={{ fontSize: "13px", color: "var(--accent-blue)", marginTop: "6px", fontWeight: 500 }}>
-        u$d {Math.round(usdValue).toLocaleString("es-AR")}
+        u$d {new Intl.NumberFormat("es-AR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(usdValue)}
       </p>
+    </div>
+  );
+}
+
+function CuotasMesCard({ label, totalArs, totalUsd, mioArs, mioUsd, isShared, icon, iconBg, accentColor, tooltip }: {
+  label: string; totalArs: number; totalUsd: number; mioArs: number; mioUsd: number; isShared: boolean;
+  icon: React.ReactNode; iconBg: string; accentColor: string; tooltip?: string;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const fmt = (n: number) => new Intl.NumberFormat("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+  return (
+    <div onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={{ position: "relative", background: "var(--surface)", border: "1px solid var(--border)", borderLeft: hovered ? `2px solid ${accentColor}` : "2px solid transparent", borderRadius: "12px", padding: "20px", transition: "border-left-color 0.2s ease, box-shadow 0.2s ease", boxShadow: hovered ? `0 0 20px ${accentColor}18` : "none", cursor: "default" }}>
+      {tooltip && hovered && (
+        <div style={{ position: "absolute", left: "12px", right: "12px", bottom: "calc(100% + 8px)", background: "#1a1a1a", border: "1px solid var(--border)", borderRadius: "8px", padding: "10px 12px", fontSize: "12px", lineHeight: 1.4, color: "var(--text-muted)", boxShadow: "0 8px 24px rgba(0,0,0,0.4)", zIndex: 10 }}>
+          {tooltip}
+        </div>
+      )}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "14px" }}>
+        <span style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</span>
+        <div style={{ width: "32px", height: "32px", background: iconBg, borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center" }}>{icon}</div>
+      </div>
+      <div>
+        <p style={{ fontSize: "10px", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "2px" }}>A pagar</p>
+        <p style={{ fontSize: "22px", fontWeight: "800", color: accentColor, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
+          $<AnimatedNumber value={totalArs} prefix="" decimals={2} />
+        </p>
+        <p style={{ fontSize: "12px", color: "var(--accent-blue)", marginTop: "4px", fontWeight: 500 }}>
+          u$d {fmt(totalUsd)}
+        </p>
+      </div>
+      {isShared && (
+        <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid var(--border)" }}>
+          <p style={{ fontSize: "10px", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "2px" }}>Mi aporte estimado</p>
+          <p style={{ fontSize: "16px", fontWeight: "700", color: "var(--accent-green)", fontVariantNumeric: "tabular-nums" }}>
+            ${fmt(mioArs)}
+          </p>
+          <p style={{ fontSize: "11px", color: "var(--accent-blue)", marginTop: "2px", fontWeight: 500 }}>
+            u$d {fmt(mioUsd)}
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -73,7 +118,6 @@ export default function Dashboard() {
 
   // Data from Supabase
   const [categories, setCategories] = useState<Category[]>([]);
-  const [cards, setCards] = useState<Card[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [purchases, setPurchases] = useState<InstallmentPurchase[]>([]);
@@ -90,15 +134,13 @@ export default function Dashboard() {
   useEffect(() => {
     setMounted(true);
     async function loadStatic() {
-      const [catRes, cardRes, purchaseRes, rateRes, settingsRes] = await Promise.all([
+      const [catRes, purchaseRes, rateRes, settingsRes] = await Promise.all([
         sb.from("categories").select("*"),
-        sb.from("cards").select("*").order("name"),
         sb.from("installment_purchases").select("*"),
         sb.from("exchange_rates").select("ccl_rate").order("date", { ascending: false }).limit(1).maybeSingle(),
         sb.from("settings").select("monthly_budget_ars").maybeSingle(),
       ]);
       if (catRes.data) setCategories(catRes.data);
-      if (cardRes.data) setCards(cardRes.data);
       if (purchaseRes.data) setPurchases(purchaseRes.data);
       if (rateRes.data) setCcl(Number(rateRes.data.ccl_rate));
       if (settingsRes.data) setBudgetArs(Number(settingsRes.data.monthly_budget_ars) || 0);
@@ -131,15 +173,22 @@ export default function Dashboard() {
 
   // Derive month key from start of range for installment computation
   const selectedMonth = dateRange.from.slice(0, 7);
+  // Mes de pago correspondiente al mes de calendario filtrado (ver addOneMonth)
+  const cuotaMonth = addOneMonth(selectedMonth);
 
   // Derived values — filtrados por rango para las stat cards
   const ingresos_ars = incomes.reduce((s, i) => s + Number(i.amount_ars), 0);
   const gastos_ars = expenses.reduce((s, e) => s + Number(e.amount_ars), 0);
-  // Solo cuotas que NO descuentan del balance (las que sí descuentan ya están en expenses)
-  const { total: cuotas_ars } = computeInstallmentsForMonth(
-    selectedMonth,
+  // Cuotas a abonar: solo las que NO descuentan del balance (las que sí ya están en expenses) — mi aporte
+  const { mioArs: cuotas_ars, mioUsd: cuotas_usd } = computeInstallmentsForMonth(
+    cuotaMonth,
     purchases.filter((p) => !p.counts_towards_balance)
   );
+  // Total del mes de pago filtrado, todas las compras (descuenten o no) — total real vs. mi aporte
+  const { totalArs: mesTotalArs, totalUsd: mesTotalUsd, mioArs: mesMioArs, mioUsd: mesMioUsd } = computeInstallmentsForMonth(cuotaMonth, purchases);
+  const mesIsShared = Math.abs(mesTotalArs - mesMioArs) > 1 || Math.abs(mesTotalUsd - mesMioUsd) > 0.01;
+  const [cuotaMonthY, cuotaMonthM] = cuotaMonth.split("-").map(Number);
+  const cuotaMonthLabel = `${MONTH_NAMES_SHORT[cuotaMonthM - 1]} ${cuotaMonthY}`;
 
   // Saldo histórico: total histórico ingresos - total histórico gastos
   const saldo_ars = historicIngresos - historicGastos;
@@ -147,7 +196,6 @@ export default function Dashboard() {
 
   const ingresos_usd = ingresos_ars / ccl;
   const gastos_usd = gastos_ars / ccl;
-  const cuotas_usd = cuotas_ars / ccl;
 
   // Category breakdown
   const expenseCats = categories.filter((c) => c.type === "expense");
@@ -165,12 +213,6 @@ export default function Dashboard() {
   ].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
 
   const getCat = (id: string) => categories.find((c) => c.id === id);
-
-  // Upcoming cuotas (next 3 months from current)
-  const upcomingMonths = getNextMonths(selectedMonth, 3).map(({ dateKey, label }) => ({
-    label, ...computeInstallmentsForMonth(dateKey, purchases),
-  }));
-  const activeCards = cards.filter((c) => upcomingMonths.some((m) => (m.byCard[c.id] ?? 0) > 0));
 
   // Budget — gastos_ars ya incluye las cuotas que generan expenses
   const budgetEnabled = budgetArs > 0;
@@ -249,49 +291,23 @@ export default function Dashboard() {
 
       <div style={{ padding: "40px 32px" }}>
 
-        {/* ─── 3 STAT CARDS ─── */}
-        <div style={{ gap: "20px", marginBottom: "44px" }} className="grid grid-cols-1 sm:grid-cols-3">
-          <StatCard label="Ingresos" value={ingresos_ars} usdValue={ingresos_usd} icon={<TrendingUp size={16} color="var(--accent-green)" />} iconBg="rgba(0,232,122,0.12)" accentColor="var(--accent-green)" />
-          <StatCard label="Gastos" value={gastos_ars} usdValue={gastos_usd} icon={<TrendingDown size={16} color="var(--error)" />} iconBg="rgba(239,68,68,0.12)" accentColor="var(--error)" />
-          <StatCard label="Cuotas" value={cuotas_ars} usdValue={cuotas_usd} icon={<CreditCard size={16} color="var(--accent-blue)" />} iconBg="rgba(14,165,233,0.12)" accentColor="var(--accent-blue)" />
-        </div>
-
-        {/* ─── UPCOMING CUOTAS ─── */}
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "12px", padding: "24px", marginBottom: "44px" }}>
-          <h2 style={{ fontSize: "15px", fontWeight: "700", marginBottom: "20px", color: "var(--text-primary)" }}>Cuotas próximos meses</h2>
-          <div style={{ display: "flex", gap: "12px", overflowX: "auto", paddingBottom: "4px" }}>
-            {upcomingMonths.map(({ label, byCard, total }) => (
-              <div key={label} style={{ flex: "0 0 calc(33% - 8px)", minWidth: "140px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "10px", padding: "14px" }}>
-                <p style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "12px" }}>{label}</p>
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                  {activeCards.map((card) => {
-                    const amount = byCard[card.id] ?? 0;
-                    if (amount === 0) return null;
-                    return (
-                      <div key={card.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                          <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: card.color, flexShrink: 0 }} />
-                          <span style={{ fontSize: "12px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>{card.bank}</span>
-                        </div>
-                        <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--accent-blue)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
-                          ${new Intl.NumberFormat("es-AR", { notation: "compact", maximumFractionDigits: 0 }).format(amount)}
-                        </span>
-                      </div>
-                    );
-                  })}
-                  {activeCards.filter((c) => (byCard[c.id] ?? 0) > 0).length === 0 && (
-                    <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>Sin cuotas</p>
-                  )}
-                </div>
-                <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 600 }}>Total</span>
-                  <span style={{ fontSize: "14px", fontWeight: "800", color: total > 0 ? "var(--error)" : "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>
-                    {total > 0 ? `$${new Intl.NumberFormat("es-AR", { notation: "compact", maximumFractionDigits: 0 }).format(total)}` : "—"}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+        {/* ─── 4 STAT CARDS ─── */}
+        <div style={{ gap: "20px", marginBottom: "44px" }} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard label="Ingresos" value={ingresos_ars} usdValue={ingresos_usd} icon={<TrendingUp size={16} color="var(--accent-green)" />} iconBg="rgba(0,232,122,0.12)" accentColor="var(--accent-green)" tooltip="Suma de los ingresos cargados en el rango de fechas filtrado." />
+          <StatCard label="Gastos" value={gastos_ars} usdValue={gastos_usd} icon={<TrendingDown size={16} color="var(--error)" />} iconBg="rgba(239,68,68,0.12)" accentColor="var(--error)" tooltip="Suma de los gastos cargados en el rango de fechas filtrado, incluye las cuotas marcadas 'Descuenta: Sí'." />
+          <StatCard label="Cuotas a abonar" value={cuotas_ars} usdValue={cuotas_usd} icon={<CreditCard size={16} color="var(--accent-blue)" />} iconBg="rgba(14,165,233,0.12)" accentColor="var(--accent-blue)" tooltip="Cuotas activas del mes de pago marcadas 'Descuenta: No' — no están en Gastos, son solo seguimiento aparte." decimals={2} />
+          <CuotasMesCard
+            label={`Cuotas ${cuotaMonthLabel}`}
+            totalArs={mesTotalArs}
+            totalUsd={mesTotalUsd}
+            mioArs={mesMioArs}
+            mioUsd={mesMioUsd}
+            isShared={mesIsShared}
+            icon={<Calendar size={16} color="#a78bfa" />}
+            iconBg="rgba(167,139,250,0.12)"
+            accentColor="#a78bfa"
+            tooltip={`Total real del resumen que se paga en ${cuotaMonthLabel}: todas las cuotas activas ese mes, descuenten o no del saldo. "Mi aporte estimado" solo aparece si compartís alguna compra y tu aporte difiere del total. El mes de pago es uno más que el mes de calendario filtrado (lo que se consume en agosto se paga en septiembre).`}
+          />
         </div>
 
         {/* ─── Category breakdown + Recent transactions ─── */}
