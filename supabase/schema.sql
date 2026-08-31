@@ -77,16 +77,17 @@ create table if not exists incomes (
   created_at timestamptz default now()
 );
 
--- 7. Resumenes de tarjeta (monto real del resumen mensual)
+-- 7. Resumenes de tarjeta (monto real del resumen mensual, en ambas monedas)
 create table if not exists card_statements (
   id uuid primary key default gen_random_uuid(),
   card_id uuid references cards(id) on delete cascade,
   period_month integer not null check (period_month between 1 and 12),
   period_year integer not null,
-  amount numeric(14,2) not null,
-  currency text not null default 'ARS',
+  amount_ars numeric(14,2),
+  amount_usd numeric(14,2),
   created_at timestamptz default now(),
-  unique (card_id, period_month, period_year)
+  unique (card_id, period_month, period_year),
+  check (amount_ars is not null or amount_usd is not null)
 );
 
 -- 8. Ahora que expenses existe, agregar FK en installment_purchases
@@ -108,6 +109,26 @@ insert into settings (monthly_budget_ars, notification_email, ccl_auto_fetch)
 select 0, 'fabririguetto@gmail.com', true
 where not exists (select 1 from settings);
 
+-- 10. Fecha de cierre de tarjeta
+alter table cards add column if not exists closing_rule text not null default 'none'
+  check (closing_rule in ('none', 'fixed_day', 'last_weekday'));
+alter table cards add column if not exists closing_day integer;         -- 1-31, si closing_rule = 'fixed_day'
+alter table cards add column if not exists closing_weekday integer;     -- 0=Domingo..6=Sábado, si closing_rule = 'last_weekday'
+
+create table if not exists card_closing_overrides (
+  id uuid primary key default gen_random_uuid(),
+  card_id uuid references cards(id) on delete cascade,
+  period_month integer not null check (period_month between 1 and 12),
+  period_year integer not null,
+  closing_date date not null,
+  created_at timestamptz default now(),
+  unique (card_id, period_month, period_year)
+);
+
+-- 11. Descuento del resumen (monto real que se resta al pagar, y en qué moneda)
+alter table card_statements add column if not exists discount_amount numeric(14,2);
+alter table card_statements add column if not exists discount_currency text check (discount_currency in ('ARS', 'USD'));
+
 -- ============================================================
 -- RLS: Deshabilitado (app personal, sin autenticación)
 -- ============================================================
@@ -119,3 +140,4 @@ alter table expenses disable row level security;
 alter table incomes disable row level security;
 alter table card_statements disable row level security;
 alter table settings disable row level security;
+alter table card_closing_overrides disable row level security;

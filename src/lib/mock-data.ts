@@ -80,12 +80,12 @@ export const INSTALLMENT_PURCHASES: InstallmentPurchase[] = [
 ];
 
 export const CARD_STATEMENTS: CardStatement[] = [
-  { id: "cs-1", card_id: "card-1", period_month: 8, period_year: 2026, amount: 285000, currency: "ARS" },
-  { id: "cs-2", card_id: "card-1", period_month: 7, period_year: 2026, amount: 268000, currency: "ARS" },
-  { id: "cs-3", card_id: "card-2", period_month: 8, period_year: 2026, amount: 198000, currency: "ARS" },
-  { id: "cs-4", card_id: "card-2", period_month: 7, period_year: 2026, amount: 175000, currency: "ARS" },
-  { id: "cs-5", card_id: "card-3", period_month: 8, period_year: 2026, amount: 145000, currency: "ARS" },
-  { id: "cs-6", card_id: "card-3", period_month: 7, period_year: 2026, amount: 132000, currency: "ARS" },
+  { id: "cs-1", card_id: "card-1", period_month: 8, period_year: 2026, amount_ars: 285000, amount_usd: null },
+  { id: "cs-2", card_id: "card-1", period_month: 7, period_year: 2026, amount_ars: 268000, amount_usd: null },
+  { id: "cs-3", card_id: "card-2", period_month: 8, period_year: 2026, amount_ars: 198000, amount_usd: null },
+  { id: "cs-4", card_id: "card-2", period_month: 7, period_year: 2026, amount_ars: 175000, amount_usd: null },
+  { id: "cs-5", card_id: "card-3", period_month: 8, period_year: 2026, amount_ars: 145000, amount_usd: null },
+  { id: "cs-6", card_id: "card-3", period_month: 7, period_year: 2026, amount_ars: 132000, amount_usd: null },
 ];
 
 // Monthly aggregated data for charts Jan-Aug 2026

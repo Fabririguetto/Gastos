@@ -12,6 +12,18 @@ export interface Card {
   name: string;
   bank: string;
   color: string;
+  closing_rule?: "none" | "fixed_day" | "last_weekday";
+  closing_day?: number | null;
+  closing_weekday?: number | null;
+  created_at?: string;
+}
+
+export interface CardClosingOverride {
+  id: string;
+  card_id: string;
+  period_month: number;
+  period_year: number;
+  closing_date: string;
   created_at?: string;
 }
 
@@ -72,8 +84,10 @@ export interface CardStatement {
   card_id: string;
   period_month: number;
   period_year: number;
-  amount: number;
-  currency: "ARS" | "USD";
+  amount_ars?: number | null;
+  amount_usd?: number | null;
+  discount_amount?: number | null;
+  discount_currency?: "ARS" | "USD" | null;
   created_at?: string;
 }
 

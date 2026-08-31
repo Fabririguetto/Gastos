@@ -180,10 +180,29 @@ export default function AnalyticsPage() {
         });
         setMonthlyData(rows);
 
-        // Category donut — all time
+        // CCL por mes (para convertir a ARS las cuotas en USD)
+        const cclByMonth: Record<string, number> = {};
+        for (const r of rates) cclByMonth[r.date.slice(0, 7)] = Number(r.ccl_rate);
+        const lastKnownCcl = rates.length > 0 ? Number(rates[rates.length - 1].ccl_rate) : 1548;
+        const monthKeysInRange = monthsInRange(from, to);
+
+        // Category donut — gastos directos + cuotas que no generan gasto propio.
+        // Las cuotas con counts_towards_balance=true ya están contadas vía `expenses`
+        // (se excluyen acá para no sumarlas dos veces).
         const catMap: Record<string, number> = {};
         for (const e of expenses) {
           catMap[e.category_id] = (catMap[e.category_id] ?? 0) + Number(e.amount_ars);
+        }
+        for (const p of purchases) {
+          if (p.counts_towards_balance || !p.category_id) continue;
+          const startKey = p.start_date.slice(0, 7);
+          const endKey = (p.end_date ?? p.start_date).slice(0, 7);
+          const monthly = Number(p.total_amount) / p.total_installments;
+          for (const key of monthKeysInRange) {
+            if (key < startKey || key > endKey) continue;
+            const rate = cclByMonth[key] ?? lastKnownCcl;
+            catMap[p.category_id] = (catMap[p.category_id] ?? 0) + (p.currency === "USD" ? monthly * rate : monthly);
+          }
         }
         const catRows: CategoryRow[] = categories
           .map((c) => ({ name: c.name, emoji: c.emoji, color: c.color, value: catMap[c.id] ?? 0 }))
@@ -192,18 +211,10 @@ export default function AnalyticsPage() {
         setCategoryData(catRows);
 
         // CCL chart
-        const cclRows: CclRow[] = rates.map((r) => ({
-          date: r.date.slice(0, 7),
-          ccl: Number(r.ccl_rate),
-        }));
-        // Dedupe by month, keep last
-        const cclByMonth: Record<string, number> = {};
-        for (const r of cclRows) cclByMonth[r.date] = r.ccl;
         setCclData(Object.entries(cclByMonth).sort().map(([date, ccl]) => ({ date, ccl })));
 
         // Cuotas evolution — consumo mensual, cuota del período y cuota mía
-        const lastKnownCcl = rates.length > 0 ? Number(rates[rates.length - 1].ccl_rate) : 1548;
-        const cuotasMonthKeys = monthsInRange(from, to);
+        const cuotasMonthKeys = monthKeysInRange;
         const cuotasRows: CuotasRow[] = cuotasMonthKeys.map((key) => {
           const rate = cclByMonth[key] ?? lastKnownCcl;
           let consumo = 0, cuotaPeriodo = 0, cuotaMia = 0;

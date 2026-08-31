@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Save, RefreshCw, Plus, Trash2, Upload, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { Save, RefreshCw, Plus, Trash2, Upload, CheckCircle, AlertCircle, Loader2, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import * as XLSX from "xlsx";
 import { useToast } from "@/components/ui/Toast";
-import type { Category } from "@/types/database";
+import type { Category, Card, InstallmentPurchase } from "@/types/database";
 
 const EMOJI_OPTIONS = ["🏠", "🛒", "🚗", "💊", "🎮", "📦", "💼", "🎁", "📈", "✈️", "🍔", "📱", "💻", "👕", "⚡"];
 const COLOR_OPTIONS = [
@@ -76,6 +76,199 @@ function matchCard(tarjetaName: string, cards: Record<string, string>): string |
     }
   }
   return null;
+}
+
+// ─── Exportar mes (gastos, ingresos, consumos) ─────────────────
+
+function currentMonth(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthBounds(month: string): { from: string; to: string } {
+  const [y, m] = month.split("-").map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  return { from: `${month}-01`, to: `${month}-${String(lastDay).padStart(2, "0")}` };
+}
+
+// Cuotas transcurridas hasta `month`, tomando start_date como arranque.
+function elapsedInstallmentsAt(startDate: string, month: string, totalInstallments: number): number {
+  const [sy, sm] = startDate.split("-").map(Number);
+  const [ry, rm] = month.split("-").map(Number);
+  // +1: el mes de start_date ya corresponde a la cuota 1, no a la cuota 0.
+  const elapsed = (ry - sy) * 12 + (rm - sm) + 1;
+  return Math.max(0, Math.min(elapsed, totalInstallments));
+}
+
+interface ExportRow {
+  date: string;
+  categoria: string;
+  detalle: string;
+  monto_ars: number;
+  monto_usd: number;
+  moneda: string;
+}
+
+interface ExportConsumo {
+  descripcion: string;
+  tarjeta: string;
+  categoria: string;
+  moneda: string;
+  cuota_total_ars: number;
+  cuota_mia_ars: number;
+  descuenta: string;
+  progreso: string;
+}
+
+interface ExportBundle {
+  month: string;
+  gastos: ExportRow[];
+  ingresos: ExportRow[];
+  consumos: ExportConsumo[];
+}
+
+async function buildExportBundle(month: string): Promise<ExportBundle> {
+  const sb = createClient();
+  const { from, to } = monthBounds(month);
+
+  const [expRes, incRes, catRes, cardRes, purRes, rateRes] = await Promise.all([
+    sb.from("expenses").select("*").gte("date", from).lte("date", to).order("date"),
+    sb.from("incomes").select("*").gte("date", from).lte("date", to).order("date"),
+    sb.from("categories").select("*"),
+    sb.from("cards").select("*"),
+    sb.from("installment_purchases").select("*"),
+    sb.from("exchange_rates").select("ccl_rate").lte("date", to).order("date", { ascending: false }).limit(1).maybeSingle(),
+  ]);
+
+  const categories: Category[] = catRes.data ?? [];
+  const cards: Card[] = cardRes.data ?? [];
+  const purchases: InstallmentPurchase[] = purRes.data ?? [];
+  const ccl = rateRes.data ? Number(rateRes.data.ccl_rate) : 1548;
+
+  const catName = (id: string | null | undefined) => categories.find((c) => c.id === id)?.name ?? "Sin categoría";
+  const cardName = (id: string | null | undefined) => cards.find((c) => c.id === id)?.name ?? "—";
+
+  const gastos: ExportRow[] = (expRes.data ?? []).map((e) => ({
+    date: e.date,
+    categoria: catName(e.category_id),
+    detalle: e.detail ?? "",
+    monto_ars: Math.round(Number(e.amount_ars)),
+    monto_usd: Number(e.amount_usd ?? 0),
+    moneda: e.currency,
+  }));
+
+  const ingresos: ExportRow[] = (incRes.data ?? []).map((i) => ({
+    date: i.date,
+    categoria: catName(i.category_id),
+    detalle: i.detail ?? "",
+    monto_ars: Math.round(Number(i.amount_ars)),
+    monto_usd: Number(i.amount_usd ?? 0),
+    moneda: i.currency,
+  }));
+
+  // Todas las cuotas activas ese mes, descuenten o no del saldo (no depende de `expenses`).
+  const consumos: ExportConsumo[] = purchases
+    .filter((p) => {
+      const startKey = p.start_date.slice(0, 7);
+      const endKey = (p.end_date ?? p.start_date).slice(0, 7);
+      return startKey <= month && month <= endKey;
+    })
+    .map((p) => {
+      const cuota = Number(p.total_amount) / p.total_installments;
+      const cuotaMia = Number(p.paid_amount ?? p.total_amount) / p.total_installments;
+      const toArs = (v: number) => (p.currency === "USD" ? v * ccl : v);
+      return {
+        descripcion: p.description,
+        tarjeta: cardName(p.card_id),
+        categoria: catName(p.category_id),
+        moneda: p.currency,
+        cuota_total_ars: Math.round(toArs(cuota)),
+        cuota_mia_ars: Math.round(toArs(cuotaMia)),
+        descuenta: p.counts_towards_balance ? "Sí" : "No",
+        progreso: `${elapsedInstallmentsAt(p.start_date, month, p.total_installments)}/${p.total_installments}`,
+      };
+    });
+
+  return { month, gastos, ingresos, consumos };
+}
+
+function csvCell(v: string | number): string {
+  const s = String(v ?? "");
+  return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function toCsvRow(cells: (string | number)[]): string {
+  return cells.map(csvCell).join(",");
+}
+
+function buildExportCsv(b: ExportBundle): string {
+  const lines: string[] = [`Exportación ${b.month}`, ""];
+
+  lines.push("GASTOS");
+  lines.push(toCsvRow(["Fecha", "Categoría", "Detalle", "Monto ARS", "Monto USD", "Moneda"]));
+  for (const g of b.gastos) lines.push(toCsvRow([g.date, g.categoria, g.detalle, g.monto_ars, g.monto_usd, g.moneda]));
+  lines.push(toCsvRow(["", "", "Total", b.gastos.reduce((s, g) => s + g.monto_ars, 0), "", ""]));
+  lines.push("");
+
+  lines.push("INGRESOS");
+  lines.push(toCsvRow(["Fecha", "Categoría", "Detalle", "Monto ARS", "Monto USD", "Moneda"]));
+  for (const i of b.ingresos) lines.push(toCsvRow([i.date, i.categoria, i.detalle, i.monto_ars, i.monto_usd, i.moneda]));
+  lines.push(toCsvRow(["", "", "Total", b.ingresos.reduce((s, i) => s + i.monto_ars, 0), "", ""]));
+  lines.push("");
+
+  lines.push("CONSUMOS (cuotas activas del mes)");
+  lines.push(toCsvRow(["Descripción", "Tarjeta", "Categoría", "Moneda", "Cuota total (ARS)", "Cuota mía (ARS)", "Descuenta saldo", "Progreso"]));
+  for (const c of b.consumos) lines.push(toCsvRow([c.descripcion, c.tarjeta, c.categoria, c.moneda, c.cuota_total_ars, c.cuota_mia_ars, c.descuenta, c.progreso]));
+  lines.push(toCsvRow(["", "", "", "Total", b.consumos.reduce((s, c) => s + c.cuota_total_ars, 0), "", "", ""]));
+
+  return lines.join("\r\n");
+}
+
+function buildExportTxt(b: ExportBundle): string {
+  const fmt = (n: number) => new Intl.NumberFormat("es-AR").format(n);
+  const totalGastos = b.gastos.reduce((s, g) => s + g.monto_ars, 0);
+  const totalIngresos = b.ingresos.reduce((s, i) => s + i.monto_ars, 0);
+  const totalConsumos = b.consumos.reduce((s, c) => s + c.cuota_total_ars, 0);
+  const sep = "-".repeat(48);
+
+  const lines: string[] = [
+    `REPORTE MENSUAL — ${b.month}`,
+    "=".repeat(48),
+    "",
+    `GASTOS (${b.gastos.length})`,
+    sep,
+    ...b.gastos.map((g) => `${g.date}  [${g.categoria}]  ${g.detalle}  —  $${fmt(g.monto_ars)} ARS`),
+    `Total gastos: $${fmt(totalGastos)} ARS`,
+    "",
+    `INGRESOS (${b.ingresos.length})`,
+    sep,
+    ...b.ingresos.map((i) => `${i.date}  [${i.categoria}]  ${i.detalle}  —  $${fmt(i.monto_ars)} ARS`),
+    `Total ingresos: $${fmt(totalIngresos)} ARS`,
+    "",
+    `CONSUMOS EN CUOTAS (${b.consumos.length})`,
+    sep,
+    ...b.consumos.map((c) =>
+      `${c.descripcion}  [${c.tarjeta}]  [${c.categoria}]  cuota ${c.progreso}  —  $${fmt(c.cuota_total_ars)} ARS (mía: $${fmt(c.cuota_mia_ars)})  ${c.descuenta === "Sí" ? "descuenta saldo" : "solo seguimiento"}`
+    ),
+    `Total consumos del mes: $${fmt(totalConsumos)} ARS`,
+    "",
+    "=".repeat(48),
+    `BALANCE DEL MES (ingresos - gastos): $${fmt(totalIngresos - totalGastos)} ARS`,
+  ];
+
+  return lines.join("\r\n");
+}
+
+function downloadFile(filename: string, content: string, mime: string) {
+  const blob = new Blob(["﻿" + content], { type: `${mime};charset=utf-8` });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // ─── Sub-components ────────────────────────────────────────────
@@ -168,6 +361,10 @@ export default function ConfiguracionPage() {
   const [importStep, setImportStep] = useState("");
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+
+  const [exportMonth, setExportMonth] = useState(currentMonth);
+  const [exporting, setExporting] = useState<"csv" | "txt" | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // ─── Load data ──────────────────────────────────────────────
 
@@ -495,6 +692,31 @@ export default function ConfiguracionPage() {
     processImport(file);
   };
 
+  // ─── Exportar mes ───────────────────────────────────────────
+
+  const handleExport = async (format: "csv" | "txt") => {
+    setExporting(format);
+    setExportError(null);
+    try {
+      const bundle = await buildExportBundle(exportMonth);
+      if (bundle.gastos.length === 0 && bundle.ingresos.length === 0 && bundle.consumos.length === 0) {
+        showToast("No hay datos para ese mes", "warning");
+        return;
+      }
+      if (format === "csv") {
+        downloadFile(`resumen-${exportMonth}.csv`, buildExportCsv(bundle), "text/csv");
+      } else {
+        downloadFile(`resumen-${exportMonth}.txt`, buildExportTxt(bundle), "text/plain");
+      }
+      showToast("Exportación descargada", "success");
+    } catch {
+      setExportError("Error al exportar los datos de ese mes.");
+      showToast("Error al exportar", "error");
+    } finally {
+      setExporting(null);
+    }
+  };
+
   // ─── Render ─────────────────────────────────────────────────
 
   return (
@@ -742,7 +964,58 @@ export default function ConfiguracionPage() {
         </div>
       </Section>
 
-      {/* 5. Importar Excel */}
+      {/* 5. Exportar mes */}
+      <Section title="Exportar datos" description="Descargá gastos, ingresos y consumos en cuotas de un mes para analizarlos o compararlos aparte">
+        <div style={{ display: "flex", gap: "12px", alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div style={{ flex: "0 1 200px" }}>
+            <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Mes
+            </label>
+            <input type="month" value={exportMonth} onChange={(e) => setExportMonth(e.target.value)} />
+          </div>
+          <button
+            onClick={() => handleExport("csv")}
+            disabled={exporting !== null}
+            style={{
+              display: "flex", alignItems: "center", gap: "6px", padding: "10px 16px",
+              background: "#202020", border: "1px solid var(--border)", borderRadius: "8px",
+              color: "var(--accent-blue)", fontSize: "13px", fontWeight: "600",
+              cursor: exporting !== null ? "wait" : "pointer", opacity: exporting !== null && exporting !== "csv" ? 0.5 : 1,
+            }}
+          >
+            <Download size={14} />
+            {exporting === "csv" ? "Generando..." : "Descargar .csv"}
+          </button>
+          <button
+            onClick={() => handleExport("txt")}
+            disabled={exporting !== null}
+            style={{
+              display: "flex", alignItems: "center", gap: "6px", padding: "10px 16px",
+              background: "#202020", border: "1px solid var(--border)", borderRadius: "8px",
+              color: "var(--accent-blue)", fontSize: "13px", fontWeight: "600",
+              cursor: exporting !== null ? "wait" : "pointer", opacity: exporting !== null && exporting !== "txt" ? 0.5 : 1,
+            }}
+          >
+            <Download size={14} />
+            {exporting === "txt" ? "Generando..." : "Descargar .txt"}
+          </button>
+        </div>
+        {exportError && (
+          <div style={{
+            display: "flex", alignItems: "flex-start", gap: "10px", padding: "12px 14px",
+            background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
+            borderRadius: "8px", marginTop: "16px",
+          }}>
+            <AlertCircle size={16} color="var(--error)" style={{ flexShrink: 0, marginTop: "1px" }} />
+            <p style={{ fontSize: "13px", color: "var(--error)" }}>{exportError}</p>
+          </div>
+        )}
+        <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "16px" }}>
+          Incluye tres secciones: gastos e ingresos registrados ese mes, y las cuotas en tarjeta activas ese mes (descuenten o no del saldo).
+        </p>
+      </Section>
+
+      {/* 6. Importar Excel */}
       <Section title="Importar datos" description="Importá tu historial desde un archivo Excel (.xlsx) — Gastos, Ingresos y Cuotas">
         {importResult ? (
           <div style={{ textAlign: "center", padding: "32px 16px" }}>

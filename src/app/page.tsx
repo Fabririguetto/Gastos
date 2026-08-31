@@ -114,8 +114,8 @@ export default function Dashboard() {
       const [expRes, incRes, allExpRes, allIncRes] = await Promise.all([
         sb.from("expenses").select("*").gte("date", from).lte("date", to).order("date", { ascending: false }),
         sb.from("incomes").select("*").gte("date", from).lte("date", to).order("date", { ascending: false }),
-        sb.from("expenses").select("amount_ars").lte("date", currentMonthRange().to),
-        sb.from("incomes").select("amount_ars").lte("date", currentMonthRange().to),
+        sb.from("expenses").select("amount_ars").lte("date", to),
+        sb.from("incomes").select("amount_ars").lte("date", to),
       ]);
       if (expRes.data) setExpenses(expRes.data);
       if (incRes.data) setIncomes(incRes.data);
