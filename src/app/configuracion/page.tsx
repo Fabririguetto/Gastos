@@ -899,7 +899,7 @@ export default function ConfiguracionPage() {
           <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
             <div>
               <label style={{ fontSize: "11px", color: "var(--text-muted)", display: "block", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Emoji</label>
-              <select value={newCatEmoji} onChange={(e) => setNewCatEmoji(e.target.value)} style={{ width: "70px", textAlign: "center", fontSize: "18px" }}>
+              <select value={newCatEmoji} onChange={(e) => setNewCatEmoji(e.target.value)} style={{ width: "68px", textAlign: "center", fontSize: "18px", padding: "10px 4px" }}>
                 {EMOJI_OPTIONS.map((e) => <option key={e} value={e}>{e}</option>)}
               </select>
             </div>
