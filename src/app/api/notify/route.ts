@@ -23,8 +23,9 @@ export async function GET(req: NextRequest) {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
+  const lastDay = new Date(year, month, 0).getDate();
   const from = `${year}-${String(month).padStart(2, "0")}-01`;
-  const to   = `${year}-${String(month).padStart(2, "0")}-31`;
+  const to   = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 
   // ── Fetch data ──────────────────────────────────────────────
   const [expensesRes, incomesRes, allExpensesRes, allIncomesRes, categoriesRes, allPurchasesRes] = await Promise.all([
@@ -36,6 +37,14 @@ export async function GET(req: NextRequest) {
     sb.from("installment_purchases")
       .select("description, total_amount, paid_amount, total_installments, paid_installments, currency"),
   ]);
+
+  for (const [label, res] of [
+    ["expenses", expensesRes], ["incomes", incomesRes],
+    ["allExpenses", allExpensesRes], ["allIncomes", allIncomesRes],
+    ["categories", categoriesRes], ["purchases", allPurchasesRes],
+  ] as const) {
+    if (res.error) console.error(`[notify] ${label} query failed:`, res.error);
+  }
 
   const expenses       = expensesRes.data ?? [];
   const incomes        = incomesRes.data ?? [];

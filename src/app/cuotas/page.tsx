@@ -605,12 +605,13 @@ function ClosingConfigModal({ open, card, overrides, onClose, onSave }: {
 
 // ─── Helpers ──────────────────────────────────────────────────
 
-function installmentDate(startDate: string, index: number): string {
-  const [sy, sm] = startDate.split("-").map(Number);
-  const total = sm + index;
-  const year = sy + Math.floor((total - 1) / 12);
-  const month = ((total - 1) % 12) + 1;
-  return `${year}-${String(month).padStart(2, "0")}-01`;
+// Fecha local (no UTC) en formato YYYY-MM-DD, para no correrse de día cerca de medianoche en husos horarios negativos.
+function toLocalDateString(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function localDateFromISO(iso: string | undefined | null): string {
+  return toLocalDateString(iso ? new Date(iso) : new Date());
 }
 
 // Cuotas transcurridas hasta el mes "desde" del filtro, tomando start_date como arranque.
@@ -626,6 +627,7 @@ function buildExpenseRecords(
   purchaseId: string,
   form: NewPurchaseForm,
   ccl: number,
+  registrationDate: string,
 ): object[] {
   const totalInst = parseInt(form.total_installments) || 1;
   const paidTotal = parseFloat(form.paid_amount || form.total_amount) || 0;
@@ -635,8 +637,8 @@ function buildExpenseRecords(
   const amount_usd = isUSD ? perInstallment : perInstallment / ccl;
 
   return Array.from({ length: totalInst }, (_, i) => ({
-    // Todas las cuotas parten de start_date, ya ajustado por el cierre de la tarjeta
-    date: installmentDate(form.start_date, i),
+    // El gasto se carga con la fecha real de registro; la cuota se sigue imputando a su mes vía start_date/end_date en installment_purchases.
+    date: registrationDate,
     category_id: form.category_id || null,
     detail: `${form.description} (cuota ${i + 1}/${totalInst})`,
     amount: perInstallment,
@@ -760,12 +762,13 @@ export default function CuotasPage() {
         start_date: data.start_date,
         end_date,
         counts_towards_balance: data.counts_towards_balance,
-      }).select("id").single();
+      }).select("id, created_at").single();
 
       if (error) throw error;
 
       if (data.counts_towards_balance && inserted?.id) {
-        const expenses = buildExpenseRecords(inserted.id, data, currentCcl);
+        const registrationDate = localDateFromISO(inserted.created_at);
+        const expenses = buildExpenseRecords(inserted.id, data, currentCcl, registrationDate);
         const { error: expErr } = await sb.from("expenses").insert(expenses);
         if (expErr) throw expErr;
       }
@@ -809,7 +812,8 @@ export default function CuotasPage() {
       if (error) throw error;
 
       if (data.counts_towards_balance) {
-        const expenses = buildExpenseRecords(editingPurchase.id, data, currentCcl);
+        const registrationDate = localDateFromISO(editingPurchase.created_at);
+        const expenses = buildExpenseRecords(editingPurchase.id, data, currentCcl, registrationDate);
         const { error: expErr } = await sb.from("expenses").insert(expenses);
         if (expErr) throw expErr;
       }
