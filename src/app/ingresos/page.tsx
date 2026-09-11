@@ -339,7 +339,14 @@ export default function IngresosPage() {
                       {new Date(income.date + "T12:00:00").toLocaleDateString("es-AR", { day: "numeric", month: "short" })}
                     </td>
                     <td><CategoryChip cat={getCat(income.category_id)} /></td>
-                    <td><span style={{ fontSize: "13px" }}>{income.detail}</span></td>
+                    <td>
+                      <span style={{ fontSize: "13px" }}>
+                        {income.detail}
+                        {income.source_expense_id && (
+                          <span title="Reintegro vinculado a un gasto" style={{ marginLeft: "6px", fontSize: "11px" }}>🔄</span>
+                        )}
+                      </span>
+                    </td>
                     <td style={{ textAlign: "right", fontWeight: "600", fontSize: "14px", color: "var(--accent-green)", fontVariantNumeric: "tabular-nums" }}>
                       +${new Intl.NumberFormat("es-AR").format(Number(income.amount_ars))}
                     </td>

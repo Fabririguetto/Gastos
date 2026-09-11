@@ -23,6 +23,10 @@ interface ExpenseFormData {
   currency: "ARS" | "USD";
   amount: string;
   ccl_rate: string;
+  hasRefund: boolean;
+  refundAmount: string;
+  refundCategoryId: string;
+  refundDate: string;
 }
 
 function ExpenseDrawer({
@@ -36,15 +40,24 @@ function ExpenseDrawer({
   currentCcl: number;
 }) {
   const expenseCats = categories.filter((c) => c.type === "expense");
+  const incomeCats = categories.filter((c) => c.type === "income");
+  const defaultRefundCategoryId = incomeCats.find((c) => c.name === "Regalo")?.id ?? incomeCats[0]?.id ?? "";
 
-  const defaultForm = (): ExpenseFormData => ({
-    date: new Date().toISOString().split("T")[0],
-    category_id: expenseCats[0]?.id ?? "",
-    detail: "",
-    currency: "ARS",
-    amount: "",
-    ccl_rate: String(currentCcl),
-  });
+  const defaultForm = (): ExpenseFormData => {
+    const today = new Date().toISOString().split("T")[0];
+    return {
+      date: today,
+      category_id: expenseCats[0]?.id ?? "",
+      detail: "",
+      currency: "ARS",
+      amount: "",
+      ccl_rate: String(currentCcl),
+      hasRefund: false,
+      refundAmount: "",
+      refundCategoryId: defaultRefundCategoryId,
+      refundDate: today,
+    };
+  };
 
   const [form, setForm] = useState<ExpenseFormData>(defaultForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -60,6 +73,10 @@ function ExpenseDrawer({
         currency: editingExpense.currency as "ARS" | "USD",
         amount: String(editingExpense.amount),
         ccl_rate: String(editingExpense.ccl_rate),
+        hasRefund: false,
+        refundAmount: "",
+        refundCategoryId: defaultRefundCategoryId,
+        refundDate: editingExpense.date,
       } : defaultForm());
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -71,11 +88,21 @@ function ExpenseDrawer({
     ? `≈ u$d ${(amountNum / cclNum).toFixed(2)} @ $${cclNum.toLocaleString("es-AR")} CCL`
     : `≈ $${Math.round(amountNum * cclNum).toLocaleString("es-AR")} ARS @ $${cclNum.toLocaleString("es-AR")} CCL`;
 
+  const refundAmountNum = parseFloat(form.refundAmount) || 0;
+  const refundEquivalent = form.currency === "ARS"
+    ? `≈ u$d ${(refundAmountNum / cclNum).toFixed(2)}`
+    : `≈ $${Math.round(refundAmountNum * cclNum).toLocaleString("es-AR")} ARS`;
+
   const validate = () => {
     const e: Record<string, string> = {};
     if (!form.detail.trim()) e.detail = "El detalle es obligatorio";
     if (!form.amount || parseFloat(form.amount) <= 0) e.amount = "Ingresá un monto mayor a cero";
     if (!form.date) e.date = "La fecha es obligatoria";
+    if (form.hasRefund) {
+      if (!form.refundAmount || refundAmountNum <= 0) e.refundAmount = "Ingresá un monto de reintegro mayor a cero";
+      if (!form.refundCategoryId) e.refundCategoryId = "Elegí una categoría para el reintegro";
+      if (!form.refundDate) e.refundDate = "La fecha del reintegro es obligatoria";
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -147,6 +174,57 @@ function ExpenseDrawer({
               <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Tipo de cambio CCL</label>
               <input type="number" value={form.ccl_rate} onChange={(e) => setForm({ ...form, ccl_rate: e.target.value })} />
             </div>
+
+            {/* Reintegro (solo al crear) */}
+            {!editingExpense && (
+              <div style={{ border: "1px solid var(--border)", borderRadius: "10px", padding: "14px 16px" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "13px", fontWeight: 600 }}>
+                  <input
+                    type="checkbox"
+                    checked={form.hasRefund}
+                    onChange={(e) => setForm({
+                      ...form,
+                      hasRefund: e.target.checked,
+                      refundAmount: e.target.checked && !form.refundAmount ? form.amount : form.refundAmount,
+                    })}
+                    style={{ width: "16px", height: "16px" }}
+                  />
+                  🔄 Este gasto tiene reintegro
+                </label>
+                <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px" }}>
+                  Ej: beneficios de tarjeta que devuelven parte o todo el pago. Se va a cargar automáticamente un ingreso vinculado.
+                </p>
+
+                {form.hasRefund && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginTop: "16px" }}>
+                    <div>
+                      <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Monto del reintegro ({form.currency})</label>
+                      <input type="number" placeholder="0.00" value={form.refundAmount} onChange={(e) => setForm({ ...form, refundAmount: e.target.value })} style={errors.refundAmount ? { borderColor: "var(--error)" } : {}} />
+                      {errors.refundAmount && <p style={{ fontSize: "11px", color: "var(--error)", marginTop: "4px" }}>{errors.refundAmount}</p>}
+                      {refundAmountNum > 0 && <p style={{ fontSize: "12px", color: "var(--accent-green)", marginTop: "6px" }}>{refundEquivalent}</p>}
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Categoría del reintegro</label>
+                      <div style={{ position: "relative" }}>
+                        <select value={form.refundCategoryId} onChange={(e) => setForm({ ...form, refundCategoryId: e.target.value })} style={{ appearance: "none", paddingRight: "36px" }}>
+                          {incomeCats.map((cat) => <option key={cat.id} value={cat.id}>{cat.emoji} {cat.name}</option>)}
+                        </select>
+                        <ChevronDown size={14} style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", pointerEvents: "none" }} />
+                      </div>
+                      {errors.refundCategoryId && <p style={{ fontSize: "11px", color: "var(--error)", marginTop: "4px" }}>{errors.refundCategoryId}</p>}
+                      {incomeCats.length === 0 && <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px" }}>Creá primero una categoría de ingreso en Configuración.</p>}
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Fecha del reintegro</label>
+                      <input type="date" value={form.refundDate} onChange={(e) => setForm({ ...form, refundDate: e.target.value })} style={errors.refundDate ? { borderColor: "var(--error)" } : {}} />
+                      {errors.refundDate && <p style={{ fontSize: "11px", color: "var(--error)", marginTop: "4px" }}>{errors.refundDate}</p>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -177,6 +255,7 @@ export default function GastosPage() {
   const { showToast } = useToast();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [refundedExpenseIds, setRefundedExpenseIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [currentCcl, setCurrentCcl] = useState(1548);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -196,13 +275,24 @@ export default function GastosPage() {
 
       const [expRes, catRes, rateRes] = await Promise.all([
         sb.from("expenses").select("*").gte("date", from).lte("date", to).order("date", { ascending: false }),
-        sb.from("categories").select("*").eq("type", "expense").order("name"),
+        sb.from("categories").select("*").order("name"),
         sb.from("exchange_rates").select("ccl_rate").order("date", { ascending: false }).limit(1).maybeSingle(),
       ]);
 
       if (expRes.data) setExpenses(expRes.data);
       if (catRes.data) setCategories(catRes.data);
       if (rateRes.data) setCurrentCcl(Number(rateRes.data.ccl_rate));
+
+      const expenseIds = (expRes.data ?? []).map((e) => e.id);
+      if (expenseIds.length > 0) {
+        const { data: refundsData } = await sb
+          .from("incomes")
+          .select("source_expense_id")
+          .in("source_expense_id", expenseIds);
+        setRefundedExpenseIds(new Set((refundsData ?? []).map((r) => r.source_expense_id).filter(Boolean)));
+      } else {
+        setRefundedExpenseIds(new Set());
+      }
     } catch {
       showToast("Error cargando datos", "error");
     } finally {
@@ -263,9 +353,27 @@ export default function GastosPage() {
         if (error) throw error;
         showToast("Gasto actualizado", "success");
       } else {
-        const { error } = await sb.from("expenses").insert(payload);
+        const { data: inserted, error } = await sb.from("expenses").insert(payload).select().single();
         if (error) throw error;
         showToast("Gasto guardado", "success");
+
+        if (data.hasRefund && inserted) {
+          const refundAmount = parseFloat(data.refundAmount) || 0;
+          const refundPayload = {
+            date: data.refundDate,
+            category_id: data.refundCategoryId,
+            detail: `Reintegro: ${data.detail}`,
+            amount: refundAmount,
+            currency: data.currency,
+            amount_ars: data.currency === "ARS" ? refundAmount : refundAmount * ccl,
+            amount_usd: data.currency === "USD" ? refundAmount : refundAmount / ccl,
+            ccl_rate: ccl,
+            source_expense_id: inserted.id,
+          };
+          const { error: refundError } = await sb.from("incomes").insert(refundPayload);
+          if (refundError) showToast("Gasto guardado, pero falló el reintegro vinculado", "error");
+          else showToast("Reintegro vinculado guardado", "success");
+        }
       }
       setDrawerOpen(false);
       setEditingExpense(null);
@@ -353,7 +461,14 @@ export default function GastosPage() {
                         {new Date(e.date + "T12:00:00").toLocaleDateString("es-AR", { day: "numeric", month: "short" })}
                       </td>
                       <td><CategoryChip cat={getCat(e.category_id)} /></td>
-                      <td><span style={{ fontSize: "13px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block", maxWidth: "220px" }}>{e.detail}</span></td>
+                      <td>
+                        <span style={{ fontSize: "13px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block", maxWidth: "220px" }}>
+                          {e.detail}
+                          {refundedExpenseIds.has(e.id) && (
+                            <span title="Tiene un reintegro vinculado" style={{ marginLeft: "6px", fontSize: "11px" }}>🔄</span>
+                          )}
+                        </span>
+                      </td>
                       <td style={{ textAlign: "right", fontWeight: "600", fontSize: "14px", fontVariantNumeric: "tabular-nums" }}>
                         ${new Intl.NumberFormat("es-AR").format(Number(e.amount_ars))}
                       </td>

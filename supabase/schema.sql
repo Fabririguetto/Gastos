@@ -129,6 +129,9 @@ create table if not exists card_closing_overrides (
 alter table card_statements add column if not exists discount_amount numeric(14,2);
 alter table card_statements add column if not exists discount_currency text check (discount_currency in ('ARS', 'USD'));
 
+-- 12. Reintegro vinculado a un gasto (ej: beneficios de tarjeta que devuelven % del pago)
+alter table incomes add column if not exists source_expense_id uuid references expenses(id) on delete cascade;
+
 -- ============================================================
 -- RLS: Deshabilitado (app personal, sin autenticación)
 -- ============================================================

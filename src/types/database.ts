@@ -59,6 +59,7 @@ export interface Income {
   amount_ars: number;
   amount_usd: number;
   ccl_rate: number;
+  source_expense_id?: string | null;
   created_at: string;
 }
 
@@ -121,6 +122,7 @@ export interface CreateIncomeInput {
   amount_ars: number;
   amount_usd: number;
   ccl_rate: number;
+  source_expense_id?: string | null;
 }
 
 export interface CreateInstallmentInput {
