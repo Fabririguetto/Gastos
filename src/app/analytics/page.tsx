@@ -186,22 +186,11 @@ export default function AnalyticsPage() {
         const lastKnownCcl = rates.length > 0 ? Number(rates[rates.length - 1].ccl_rate) : 1548;
         const monthKeysInRange = monthsInRange(from, to);
 
-        // Category donut — gastos directos + cuotas que no generan gasto propio.
-        // Las cuotas con counts_towards_balance=true ya están contadas vía `expenses`
-        // (se excluyen acá para no sumarlas dos veces).
+        // Category donut — ahora todos los gastos (directos y de cuotas del período) están en `expenses`
         const catMap: Record<string, number> = {};
         for (const e of expenses) {
-          catMap[e.category_id] = (catMap[e.category_id] ?? 0) + Number(e.amount_ars);
-        }
-        for (const p of purchases) {
-          if (p.counts_towards_balance || !p.category_id) continue;
-          const startKey = p.start_date.slice(0, 7);
-          const endKey = (p.end_date ?? p.start_date).slice(0, 7);
-          const monthly = Number(p.total_amount) / p.total_installments;
-          for (const key of monthKeysInRange) {
-            if (key < startKey || key > endKey) continue;
-            const rate = cclByMonth[key] ?? lastKnownCcl;
-            catMap[p.category_id] = (catMap[p.category_id] ?? 0) + (p.currency === "USD" ? monthly * rate : monthly);
+          if (e.category_id) {
+            catMap[e.category_id] = (catMap[e.category_id] ?? 0) + Number(e.amount_ars);
           }
         }
         const catRows: CategoryRow[] = categories

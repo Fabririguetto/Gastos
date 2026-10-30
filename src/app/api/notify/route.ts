@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+export const dynamic = "force-dynamic";
+
+const resend = new Resend(process.env.RESEND_API_KEY || "resend_placeholder");
 
 function fmt(n: number) {
   return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 }).format(n);

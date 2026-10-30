@@ -5,7 +5,9 @@ import { Plus, X, Pencil, Trash2, ChevronDown, Search } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/Toast";
 import { DateRangeFilter, DateRange, currentMonthRange } from "@/components/ui/DateRangeFilter";
-import type { Expense, Category } from "@/types/database";
+import type { Expense, Category, Card, CardClosingOverride } from "@/types/database";
+import { suggestFirstInstallmentDate } from "@/lib/cardClosing";
+import { buildDistributedExpenses } from "@/lib/installmentExpenses";
 
 function CategoryChip({ cat }: { cat: Category | undefined }) {
   if (!cat) return null;
@@ -27,24 +29,40 @@ interface ExpenseFormData {
   refundAmount: string;
   refundCategoryId: string;
   refundDate: string;
+  isInstallment: boolean;
+  cardId: string;
+  totalInstallments: string;
+  paidAmount: string;
+  startDate: string;
+  countsTowardsBalance: boolean;
 }
 
 function ExpenseDrawer({
-  open, onClose, onSave, editingExpense, categories, currentCcl,
+  open, onClose, onSave, editingExpense, categories, cards, overrides, currentCcl,
 }: {
   open: boolean;
   onClose: () => void;
   onSave: (data: ExpenseFormData, editingId?: string) => Promise<void>;
   editingExpense?: Expense | null;
   categories: Category[];
+  cards: Card[];
+  overrides: CardClosingOverride[];
   currentCcl: number;
 }) {
   const expenseCats = categories.filter((c) => c.type === "expense");
   const incomeCats = categories.filter((c) => c.type === "income");
   const defaultRefundCategoryId = incomeCats.find((c) => c.name === "Regalo")?.id ?? incomeCats[0]?.id ?? "";
 
+  function suggestedStartDateFor(cardId: string): string {
+    const card = cards.find((c) => c.id === cardId);
+    if (!card) return new Date().toISOString().split("T")[0];
+    const today = new Date();
+    return suggestFirstInstallmentDate(card, today.getFullYear(), today.getMonth() + 1, today.getDate(), overrides);
+  }
+
   const defaultForm = (): ExpenseFormData => {
     const today = new Date().toISOString().split("T")[0];
+    const initialCardId = cards[0]?.id ?? "";
     return {
       date: today,
       category_id: expenseCats[0]?.id ?? "",
@@ -56,16 +74,24 @@ function ExpenseDrawer({
       refundAmount: "",
       refundCategoryId: defaultRefundCategoryId,
       refundDate: today,
+      isInstallment: false,
+      cardId: initialCardId,
+      totalInstallments: "1",
+      paidAmount: "",
+      startDate: initialCardId ? suggestedStartDateFor(initialCardId) : today,
+      countsTowardsBalance: true,
     };
   };
 
   const [form, setForm] = useState<ExpenseFormData>(defaultForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [startDateTouched, setStartDateTouched] = useState(false);
 
   useEffect(() => {
     if (open) {
       setErrors({});
+      setStartDateTouched(false);
       setForm(editingExpense ? {
         date: editingExpense.date,
         category_id: editingExpense.category_id,
@@ -77,10 +103,23 @@ function ExpenseDrawer({
         refundAmount: "",
         refundCategoryId: defaultRefundCategoryId,
         refundDate: editingExpense.date,
+        isInstallment: false,
+        cardId: cards[0]?.id ?? "",
+        totalInstallments: "1",
+        paidAmount: "",
+        startDate: cards[0]?.id ? suggestedStartDateFor(cards[0].id) : editingExpense.date,
+        countsTowardsBalance: true,
       } : defaultForm());
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editingExpense?.id]);
+
+  useEffect(() => {
+    if (open && form.isInstallment && form.cardId && !startDateTouched && !editingExpense) {
+      setForm((f) => ({ ...f, startDate: suggestedStartDateFor(f.cardId) }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.cardId, form.isInstallment]);
 
   const amountNum = parseFloat(form.amount) || 0;
   const cclNum = parseFloat(form.ccl_rate) || currentCcl;
@@ -93,11 +132,21 @@ function ExpenseDrawer({
     ? `≈ u$d ${(refundAmountNum / cclNum).toFixed(2)}`
     : `≈ $${Math.round(refundAmountNum * cclNum).toLocaleString("es-AR")} ARS`;
 
+  const installmentsNum = parseInt(form.totalInstallments) || 1;
+  const paidTotalNum = parseFloat(form.paidAmount || form.amount) || amountNum;
+  const perInstallment = amountNum / installmentsNum;
+  const perInstallmentMine = paidTotalNum / installmentsNum;
+  const isShared = paidTotalNum > 0 && Math.abs(paidTotalNum - amountNum) > 0.01;
+
   const validate = () => {
     const e: Record<string, string> = {};
     if (!form.detail.trim()) e.detail = "El detalle es obligatorio";
     if (!form.amount || parseFloat(form.amount) <= 0) e.amount = "Ingresá un monto mayor a cero";
     if (!form.date) e.date = "La fecha es obligatoria";
+    if (form.isInstallment) {
+      if (!form.cardId) e.cardId = "Seleccioná una tarjeta";
+      if (!form.startDate) e.startDate = "La fecha de primera cuota es obligatoria";
+    }
     if (form.hasRefund) {
       if (!form.refundAmount || refundAmountNum <= 0) e.refundAmount = "Ingresá un monto de reintegro mayor a cero";
       if (!form.refundCategoryId) e.refundCategoryId = "Elegí una categoría para el reintegro";
@@ -174,6 +223,122 @@ function ExpenseDrawer({
               <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Tipo de cambio CCL</label>
               <input type="number" value={form.ccl_rate} onChange={(e) => setForm({ ...form, ccl_rate: e.target.value })} />
             </div>
+
+            {/* Compra en cuotas (solo al crear) */}
+            {!editingExpense && cards.length > 0 && (
+              <div style={{ border: "1px solid var(--border)", borderRadius: "10px", padding: "14px 16px" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "13px", fontWeight: 600 }}>
+                  <input
+                    type="checkbox"
+                    checked={form.isInstallment}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setForm((prev) => ({
+                        ...prev,
+                        isInstallment: checked,
+                        cardId: prev.cardId || cards[0]?.id || "",
+                        startDate: prev.startDate || suggestedStartDateFor(prev.cardId || cards[0]?.id || ""),
+                      }));
+                    }}
+                    style={{ width: "16px", height: "16px" }}
+                  />
+                  💳 Compra en cuotas con tarjeta
+                </label>
+                <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px" }}>
+                  Registra la compra en Cuotas y distribuye el gasto mes a mes automáticamente.
+                </p>
+
+                {form.isInstallment && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginTop: "16px" }}>
+                    <div>
+                      <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Tarjeta *</label>
+                      <div style={{ position: "relative" }}>
+                        <select
+                          value={form.cardId}
+                          onChange={(e) => setForm({ ...form, cardId: e.target.value })}
+                          style={{ appearance: "none", paddingRight: "36px" }}
+                        >
+                          {cards.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                        <ChevronDown size={14} style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", pointerEvents: "none" }} />
+                      </div>
+                      {errors.cardId && <p style={{ fontSize: "11px", color: "var(--error)", marginTop: "4px" }}>{errors.cardId}</p>}
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                      <div>
+                        <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>N° cuotas</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="60"
+                          value={form.totalInstallments}
+                          onChange={(e) => setForm({ ...form, totalInstallments: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>1° Cuota (mes)</label>
+                        <input
+                          type="date"
+                          value={form.startDate}
+                          onChange={(e) => {
+                            setStartDateTouched(true);
+                            setForm({ ...form, startDate: e.target.value });
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                        Lo que abonás vos <span style={{ fontWeight: 400, textTransform: "none", fontSize: "11px" }}>(opcional si es compartida)</span>
+                      </label>
+                      <input
+                        type="number"
+                        placeholder={form.amount || "= monto total"}
+                        value={form.paidAmount}
+                        onChange={(e) => setForm({ ...form, paidAmount: e.target.value })}
+                      />
+                    </div>
+
+                    {perInstallment > 0 && (
+                      <div style={{ background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.2)", borderRadius: "8px", padding: "10px 12px", fontSize: "12px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "var(--accent-blue)" }}>
+                          <span>Cuota tarjeta:</span>
+                          <strong>${new Intl.NumberFormat("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(perInstallment)} {form.currency}</strong>
+                        </div>
+                        {isShared && (
+                          <div style={{ display: "flex", justifyContent: "space-between", color: "var(--accent-green)", marginTop: "4px" }}>
+                            <span>Mi aporte/cuota:</span>
+                            <strong>${new Intl.NumberFormat("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(perInstallmentMine)} {form.currency}</strong>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div style={{ background: "#202020", border: "1px solid var(--border)", borderRadius: "8px", padding: "12px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div>
+                          <p style={{ fontSize: "13px", fontWeight: "600" }}>¿Descuenta de mi saldo este mes?</p>
+                          <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "2px" }}>
+                            {form.countsTowardsBalance
+                              ? "Sí: la 1° cuota impacta este mes y las siguientes en los meses sucesivos"
+                              : "No: impacta a partir del mes de pago de la tarjeta y los meses sucesivos"}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setForm({ ...form, countsTowardsBalance: !form.countsTowardsBalance })}
+                          style={{ width: "44px", height: "24px", borderRadius: "12px", border: "none", background: form.countsTowardsBalance ? "var(--accent-green)" : "var(--border)", cursor: "pointer", position: "relative", transition: "background 0.2s ease", flexShrink: 0 }}
+                        >
+                          <div style={{ position: "absolute", top: "3px", left: form.countsTowardsBalance ? "23px" : "3px", width: "18px", height: "18px", borderRadius: "50%", background: "white", transition: "left 0.2s ease" }} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Reintegro (solo al crear) */}
             {!editingExpense && (
@@ -255,6 +420,8 @@ export default function GastosPage() {
   const { showToast } = useToast();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [cards, setCards] = useState<Card[]>([]);
+  const [overrides, setOverrides] = useState<CardClosingOverride[]>([]);
   const [refundedExpenseIds, setRefundedExpenseIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [currentCcl, setCurrentCcl] = useState(1548);
@@ -273,15 +440,19 @@ export default function GastosPage() {
     try {
       const { from, to } = dateRange;
 
-      const [expRes, catRes, rateRes] = await Promise.all([
+      const [expRes, catRes, rateRes, cardsRes, overridesRes] = await Promise.all([
         sb.from("expenses").select("*").gte("date", from).lte("date", to).order("date", { ascending: false }),
         sb.from("categories").select("*").order("name"),
         sb.from("exchange_rates").select("ccl_rate").order("date", { ascending: false }).limit(1).maybeSingle(),
+        sb.from("cards").select("*").order("name"),
+        sb.from("card_closing_overrides").select("*"),
       ]);
 
       if (expRes.data) setExpenses(expRes.data);
       if (catRes.data) setCategories(catRes.data);
       if (rateRes.data) setCurrentCcl(Number(rateRes.data.ccl_rate));
+      if (cardsRes.data) setCards(cardsRes.data);
+      if (overridesRes.data) setOverrides(overridesRes.data);
 
       const expenseIds = (expRes.data ?? []).map((e) => e.id);
       if (expenseIds.length > 0) {
@@ -352,6 +523,70 @@ export default function GastosPage() {
         const { error } = await sb.from("expenses").update(payload).eq("id", editingId);
         if (error) throw error;
         showToast("Gasto actualizado", "success");
+      } else if (data.isInstallment) {
+        const [sy, sm] = data.startDate.split("-").map(Number);
+        const totalInst = parseInt(data.totalInstallments) || 1;
+        const endMonthTotal = sm + totalInst - 1;
+        const endYear = sy + Math.floor((endMonthTotal - 1) / 12);
+        const endMonth = ((endMonthTotal - 1) % 12) + 1;
+        const end_date = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
+
+        const { data: insertedPurchase, error: pErr } = await sb.from("installment_purchases").insert({
+          description: data.detail,
+          card_id: data.cardId || null,
+          category_id: data.category_id || null,
+          total_amount: amount,
+          paid_amount: parseFloat(data.paidAmount || data.amount) || amount,
+          currency: data.currency,
+          total_installments: totalInst,
+          paid_installments: 0,
+          start_date: data.startDate,
+          end_date,
+          counts_towards_balance: data.countsTowardsBalance,
+        }).select("id, created_at").single();
+
+        if (pErr) throw pErr;
+
+        if (insertedPurchase?.id) {
+          const registrationDate = data.date;
+          const expenses = buildDistributedExpenses({
+            purchaseId: insertedPurchase.id,
+            description: data.detail,
+            totalAmount: amount,
+            paidAmount: parseFloat(data.paidAmount || data.amount) || amount,
+            currency: data.currency,
+            totalInstallments: totalInst,
+            categoryId: data.category_id,
+            startDate: data.startDate,
+            registrationDate,
+            countsTowardsBalance: data.countsTowardsBalance,
+            ccl,
+          });
+          const { data: insertedExpenses, error: expErr } = await sb
+            .from("expenses")
+            .insert(expenses)
+            .select("id, date")
+            .order("date", { ascending: true });
+          if (expErr) throw expErr;
+
+          if (data.hasRefund && insertedExpenses && insertedExpenses.length > 0) {
+            const refundAmount = parseFloat(data.refundAmount) || 0;
+            const refundPayload = {
+              date: data.refundDate,
+              category_id: data.refundCategoryId,
+              detail: `Reintegro: ${data.detail}`,
+              amount: refundAmount,
+              currency: data.currency,
+              amount_ars: data.currency === "ARS" ? refundAmount : refundAmount * ccl,
+              amount_usd: data.currency === "USD" ? refundAmount : refundAmount / ccl,
+              ccl_rate: ccl,
+              source_expense_id: insertedExpenses[0].id,
+            };
+            const { error: refundError } = await sb.from("incomes").insert(refundPayload);
+            if (refundError) showToast("Compra guardada, pero falló el reintegro vinculado", "error");
+          }
+        }
+        showToast("Compra en cuotas registrada", "success");
       } else {
         const { data: inserted, error } = await sb.from("expenses").insert(payload).select().single();
         if (error) throw error;
@@ -462,10 +697,17 @@ export default function GastosPage() {
                       </td>
                       <td><CategoryChip cat={getCat(e.category_id)} /></td>
                       <td>
-                        <span style={{ fontSize: "13px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block", maxWidth: "220px" }}>
-                          {e.detail}
+                        <span style={{ fontSize: "13px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "6px", maxWidth: "260px" }}>
+                          {e.installment_purchase_id && (
+                            <span title="Compra en cuotas" style={{ display: "inline-flex", alignItems: "center", gap: "3px", padding: "1px 6px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, background: "rgba(14,165,233,0.12)", color: "var(--accent-blue)", flexShrink: 0 }}>
+                              💳 Cuota
+                            </span>
+                          )}
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {e.detail}
+                          </span>
                           {refundedExpenseIds.has(e.id) && (
-                            <span title="Tiene un reintegro vinculado" style={{ marginLeft: "6px", fontSize: "11px" }}>🔄</span>
+                            <span title="Tiene un reintegro vinculado" style={{ fontSize: "11px", flexShrink: 0 }}>🔄</span>
                           )}
                         </span>
                       </td>
@@ -501,6 +743,8 @@ export default function GastosPage() {
         onSave={handleSave}
         editingExpense={editingExpense}
         categories={categories}
+        cards={cards}
+        overrides={overrides}
         currentCcl={currentCcl}
       />
 

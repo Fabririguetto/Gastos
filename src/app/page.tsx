@@ -179,10 +179,10 @@ export default function Dashboard() {
   // Derived values — filtrados por rango para las stat cards
   const ingresos_ars = incomes.reduce((s, i) => s + Number(i.amount_ars), 0);
   const gastos_ars = expenses.reduce((s, e) => s + Number(e.amount_ars), 0);
-  // Cuotas a abonar: solo las que NO descuentan del balance (las que sí ya están en expenses) — mi aporte
+  // Cuotas a abonar: aporte propio en cuotas para el mes de pago
   const { mioArs: cuotas_ars, mioUsd: cuotas_usd } = computeInstallmentsForMonth(
     cuotaMonth,
-    purchases.filter((p) => !p.counts_towards_balance)
+    purchases
   );
   // Total del mes de pago filtrado, todas las compras (descuenten o no) — total real vs. mi aporte
   const { totalArs: mesTotalArs, totalUsd: mesTotalUsd, mioArs: mesMioArs, mioUsd: mesMioUsd } = computeInstallmentsForMonth(cuotaMonth, purchases);
@@ -294,8 +294,8 @@ export default function Dashboard() {
         {/* ─── 4 STAT CARDS ─── */}
         <div style={{ gap: "20px", marginBottom: "44px" }} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard label="Ingresos" value={ingresos_ars} usdValue={ingresos_usd} icon={<TrendingUp size={16} color="var(--accent-green)" />} iconBg="rgba(0,232,122,0.12)" accentColor="var(--accent-green)" tooltip="Suma de los ingresos cargados en el rango de fechas filtrado." />
-          <StatCard label="Gastos" value={gastos_ars} usdValue={gastos_usd} icon={<TrendingDown size={16} color="var(--error)" />} iconBg="rgba(239,68,68,0.12)" accentColor="var(--error)" tooltip="Suma de los gastos cargados en el rango de fechas filtrado, incluye las cuotas marcadas 'Descuenta: Sí'." />
-          <StatCard label="Cuotas a abonar" value={cuotas_ars} usdValue={cuotas_usd} icon={<CreditCard size={16} color="var(--accent-blue)" />} iconBg="rgba(14,165,233,0.12)" accentColor="var(--accent-blue)" tooltip="Cuotas activas del mes de pago marcadas 'Descuenta: No' — no están en Gastos, son solo seguimiento aparte." decimals={2} />
+          <StatCard label="Gastos" value={gastos_ars} usdValue={gastos_usd} icon={<TrendingDown size={16} color="var(--error)" />} iconBg="rgba(239,68,68,0.12)" accentColor="var(--error)" tooltip="Suma de los gastos cargados en el rango de fechas filtrado, incluye las cuotas correspondientes al mes." />
+          <StatCard label="Cuotas a abonar" value={cuotas_ars} usdValue={cuotas_usd} icon={<CreditCard size={16} color="var(--accent-blue)" />} iconBg="rgba(14,165,233,0.12)" accentColor="var(--accent-blue)" tooltip="Mi aporte estimado en cuotas para el mes de pago seleccionado." decimals={2} />
           <CuotasMesCard
             label={`Cuotas ${cuotaMonthLabel}`}
             totalArs={mesTotalArs}

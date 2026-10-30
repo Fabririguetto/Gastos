@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Plus, X, ChevronDown, Check, Search, Pencil, Trash2, Settings2 } from "lucide-react";
+import { X, ChevronDown, Check, Search, Pencil, Trash2, Settings2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/Toast";
 import type { InstallmentPurchase, Card, CardStatement, Category, CardClosingOverride } from "@/types/database";
 import { WEEKDAY_NAMES, formatClosingDate, getEffectiveClosingDate, suggestFirstInstallmentDate } from "@/lib/cardClosing";
+import { buildDistributedExpenses } from "@/lib/installmentExpenses";
 
 // Todos los montos de esta página se muestran con 2 decimales (a diferencia del resto de la app).
 function fmt2(n: number): string {
@@ -56,6 +57,10 @@ interface NewPurchaseForm {
   category_id: string;
   start_date: string;
   counts_towards_balance: boolean;
+  has_refund?: boolean;
+  refund_amount?: string;
+  refund_category_id?: string;
+  refund_date?: string;
 }
 
 function NewPurchaseModal({ open, onClose, onSave, cards, categories, currentCcl, editingPurchase, overrides }: {
@@ -69,6 +74,9 @@ function NewPurchaseModal({ open, onClose, onSave, cards, categories, currentCcl
   overrides: CardClosingOverride[];
 }) {
   const today = new Date();
+  const expenseCats = categories.filter((c) => c.type === "expense");
+  const incomeCats = categories.filter((c) => c.type === "income");
+  const defaultRefundCategoryId = incomeCats.find((c) => c.name === "Regalo")?.id ?? incomeCats[0]?.id ?? "";
 
   function suggestedStartDateFor(cardId: string): string {
     const card = cards.find((c) => c.id === cardId);
@@ -83,9 +91,13 @@ function NewPurchaseModal({ open, onClose, onSave, cards, categories, currentCcl
     currency: "ARS",
     total_installments: "1",
     card_id: cards[0]?.id ?? "",
-    category_id: categories[0]?.id ?? "",
+    category_id: expenseCats[0]?.id ?? categories[0]?.id ?? "",
     start_date: firstOfNextMonth(),
     counts_towards_balance: true,
+    has_refund: false,
+    refund_amount: "",
+    refund_category_id: defaultRefundCategoryId,
+    refund_date: new Date().toISOString().split("T")[0],
   };
 
   const [form, setForm] = useState<NewPurchaseForm>(blankForm);
@@ -141,6 +153,12 @@ function NewPurchaseModal({ open, onClose, onSave, cards, categories, currentCcl
     if (!form.description.trim()) e.description = "La descripción es obligatoria";
     if (!form.total_amount || parseFloat(form.total_amount) <= 0) e.total_amount = "Ingresá un monto mayor a cero";
     if (!form.category_id) e.category_id = "Seleccioná una categoría";
+    if (form.has_refund) {
+      const refAmt = parseFloat(form.refund_amount || "0") || 0;
+      if (!form.refund_amount || refAmt <= 0) e.refund_amount = "Ingresá un monto de reintegro mayor a cero";
+      if (!form.refund_category_id) e.refund_category_id = "Elegí una categoría para el reintegro";
+      if (!form.refund_date) e.refund_date = "La fecha del reintegro es obligatoria";
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -247,7 +265,7 @@ function NewPurchaseModal({ open, onClose, onSave, cards, categories, currentCcl
                   style={{ appearance: "none", paddingRight: "36px", ...(errors.category_id ? { borderColor: "var(--error)" } : {}) }}
                 >
                   <option value="">— Seleccioná una categoría —</option>
-                  {categories.map((c) => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+                  {expenseCats.map((c) => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
                 </select>
                 <ChevronDown size={14} style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", pointerEvents: "none" }} />
               </div>
@@ -260,11 +278,11 @@ function NewPurchaseModal({ open, onClose, onSave, cards, categories, currentCcl
             <div style={{ background: "#202020", border: "1px solid var(--border)", borderRadius: "10px", padding: "16px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                  <p style={{ fontSize: "14px", fontWeight: "600" }}>¿Descuenta de mi saldo?</p>
+                  <p style={{ fontSize: "14px", fontWeight: "600" }}>¿Descuenta de mi saldo este mes?</p>
                   <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
                     {form.counts_towards_balance
-                      ? "Cada cuota se registra como gasto automáticamente"
-                      : "Solo seguimiento — no impacta en el balance"}
+                      ? "Sí: la 1° cuota impacta este mes y las siguientes en los meses sucesivos"
+                      : "No: impacta a partir del mes de pago de la tarjeta y los meses sucesivos"}
                   </p>
                 </div>
                 <button onClick={() => setForm({ ...form, counts_towards_balance: !form.counts_towards_balance })} style={{ width: "44px", height: "24px", borderRadius: "12px", border: "none", background: form.counts_towards_balance ? "var(--accent-green)" : "var(--border)", cursor: "pointer", position: "relative", transition: "background 0.2s ease", flexShrink: 0 }}>
@@ -272,6 +290,55 @@ function NewPurchaseModal({ open, onClose, onSave, cards, categories, currentCcl
                 </button>
               </div>
             </div>
+
+            {/* Reintegro (solo al crear) */}
+            {!editingPurchase && (
+              <div style={{ border: "1px solid var(--border)", borderRadius: "10px", padding: "14px 16px" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "13px", fontWeight: 600 }}>
+                  <input
+                    type="checkbox"
+                    checked={!!form.has_refund}
+                    onChange={(e) => setForm({
+                      ...form,
+                      has_refund: e.target.checked,
+                      refund_amount: e.target.checked && !form.refund_amount ? (form.paid_amount || form.total_amount) : form.refund_amount,
+                    })}
+                    style={{ width: "16px", height: "16px" }}
+                  />
+                  🔄 Esta compra tiene reintegro
+                </label>
+                <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px" }}>
+                  Ej: beneficios de tarjeta que devuelven parte o todo el pago. Se va a cargar automáticamente un ingreso vinculado.
+                </p>
+
+                {form.has_refund && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginTop: "16px" }}>
+                    <div>
+                      <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Monto del reintegro ({form.currency})</label>
+                      <input type="number" placeholder="0.00" value={form.refund_amount} onChange={(e) => setForm({ ...form, refund_amount: e.target.value })} style={errors.refund_amount ? { borderColor: "var(--error)" } : {}} />
+                      {errors.refund_amount && <p style={{ fontSize: "11px", color: "var(--error)", marginTop: "4px" }}>{errors.refund_amount}</p>}
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Categoría del reintegro</label>
+                      <div style={{ position: "relative" }}>
+                        <select value={form.refund_category_id} onChange={(e) => setForm({ ...form, refund_category_id: e.target.value })} style={{ appearance: "none", paddingRight: "36px" }}>
+                          {incomeCats.map((cat) => <option key={cat.id} value={cat.id}>{cat.emoji} {cat.name}</option>)}
+                        </select>
+                        <ChevronDown size={14} style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", pointerEvents: "none" }} />
+                      </div>
+                      {errors.refund_category_id && <p style={{ fontSize: "11px", color: "var(--error)", marginTop: "4px" }}>{errors.refund_category_id}</p>}
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500, display: "block", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Fecha del reintegro</label>
+                      <input type="date" value={form.refund_date} onChange={(e) => setForm({ ...form, refund_date: e.target.value })} style={errors.refund_date ? { borderColor: "var(--error)" } : {}} />
+                      {errors.refund_date && <p style={{ fontSize: "11px", color: "var(--error)", marginTop: "4px" }}>{errors.refund_date}</p>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -623,32 +690,6 @@ function elapsedInstallments(startDate: string, refMonth: string, totalInstallme
   return Math.max(0, Math.min(elapsed, totalInstallments));
 }
 
-function buildExpenseRecords(
-  purchaseId: string,
-  form: NewPurchaseForm,
-  ccl: number,
-  registrationDate: string,
-): object[] {
-  const totalInst = parseInt(form.total_installments) || 1;
-  const paidTotal = parseFloat(form.paid_amount || form.total_amount) || 0;
-  const perInstallment = paidTotal / totalInst;
-  const isUSD = form.currency === "USD";
-  const amount_ars = isUSD ? perInstallment * ccl : perInstallment;
-  const amount_usd = isUSD ? perInstallment : perInstallment / ccl;
-
-  return Array.from({ length: totalInst }, (_, i) => ({
-    // El gasto se carga con la fecha real de registro; la cuota se sigue imputando a su mes vía start_date/end_date en installment_purchases.
-    date: registrationDate,
-    category_id: form.category_id || null,
-    detail: `${form.description} (cuota ${i + 1}/${totalInst})`,
-    amount: perInstallment,
-    currency: form.currency,
-    amount_ars,
-    amount_usd,
-    ccl_rate: ccl,
-    installment_purchase_id: purchaseId,
-  }));
-}
 
 // ─── Page ─────────────────────────────────────────────────────
 
@@ -678,7 +719,7 @@ export default function CuotasPage() {
     try {
       const [cardsRes, catsRes, purchasesRes, statementsRes, rateRes, overridesRes] = await Promise.all([
         sb.from("cards").select("*").order("name"),
-        sb.from("categories").select("*").eq("type", "expense").order("name"),
+        sb.from("categories").select("*").order("name"),
         sb.from("installment_purchases").select("*").order("created_at", { ascending: false }),
         sb.from("card_statements").select("*").order("period_year", { ascending: false }).order("period_month", { ascending: false }),
         sb.from("exchange_rates").select("ccl_rate").order("date", { ascending: false }).limit(1).maybeSingle(),
@@ -766,11 +807,44 @@ export default function CuotasPage() {
 
       if (error) throw error;
 
-      if (data.counts_towards_balance && inserted?.id) {
+      if (inserted?.id) {
         const registrationDate = localDateFromISO(inserted.created_at);
-        const expenses = buildExpenseRecords(inserted.id, data, currentCcl, registrationDate);
-        const { error: expErr } = await sb.from("expenses").insert(expenses);
+        const expenses = buildDistributedExpenses({
+          purchaseId: inserted.id,
+          description: data.description,
+          totalAmount: parseFloat(data.total_amount) || 0,
+          paidAmount: parseFloat(data.paid_amount || data.total_amount) || 0,
+          currency: data.currency,
+          totalInstallments: totalInst,
+          categoryId: data.category_id,
+          startDate: data.start_date,
+          registrationDate,
+          countsTowardsBalance: data.counts_towards_balance,
+          ccl: currentCcl,
+        });
+        const { data: insertedExpenses, error: expErr } = await sb
+          .from("expenses")
+          .insert(expenses)
+          .select("id, date")
+          .order("date", { ascending: true });
         if (expErr) throw expErr;
+
+        if (data.has_refund && insertedExpenses && insertedExpenses.length > 0) {
+          const refundAmount = parseFloat(data.refund_amount || "0") || 0;
+          const refundPayload = {
+            date: data.refund_date || registrationDate,
+            category_id: data.refund_category_id,
+            detail: `Reintegro: ${data.description}`,
+            amount: refundAmount,
+            currency: data.currency,
+            amount_ars: data.currency === "ARS" ? refundAmount : refundAmount * currentCcl,
+            amount_usd: data.currency === "USD" ? refundAmount : refundAmount / currentCcl,
+            ccl_rate: currentCcl,
+            source_expense_id: insertedExpenses[0].id,
+          };
+          const { error: refundErr } = await sb.from("incomes").insert(refundPayload);
+          if (refundErr) showToast("Compra guardada, pero falló el reintegro vinculado", "error");
+        }
       }
 
       showToast("Compra registrada", "success");
@@ -811,12 +885,22 @@ export default function CuotasPage() {
 
       if (error) throw error;
 
-      if (data.counts_towards_balance) {
-        const registrationDate = localDateFromISO(editingPurchase.created_at);
-        const expenses = buildExpenseRecords(editingPurchase.id, data, currentCcl, registrationDate);
-        const { error: expErr } = await sb.from("expenses").insert(expenses);
-        if (expErr) throw expErr;
-      }
+      const registrationDate = localDateFromISO(editingPurchase.created_at);
+      const expenses = buildDistributedExpenses({
+        purchaseId: editingPurchase.id,
+        description: data.description,
+        totalAmount: parseFloat(data.total_amount) || 0,
+        paidAmount: parseFloat(data.paid_amount || data.total_amount) || 0,
+        currency: data.currency,
+        totalInstallments: totalInst,
+        categoryId: data.category_id,
+        startDate: data.start_date,
+        registrationDate,
+        countsTowardsBalance: data.counts_towards_balance,
+        ccl: currentCcl,
+      });
+      const { error: expErr } = await sb.from("expenses").insert(expenses);
+      if (expErr) throw expErr;
 
       showToast("Compra actualizada", "success");
       setEditingPurchase(null);
@@ -915,11 +999,8 @@ export default function CuotasPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "36px" }}>
         <div>
           <h1 style={{ fontSize: "24px", fontWeight: "700", letterSpacing: "-0.02em" }}>Cuotas & Tarjetas</h1>
-          <p style={{ fontSize: "13px", color: "var(--text-muted)", marginTop: "4px" }}>{filteredPurchases.length} compras</p>
+          <p style={{ fontSize: "13px", color: "var(--text-muted)", marginTop: "4px" }}>{filteredPurchases.length} compras · Las cuotas se cargan desde Gastos</p>
         </div>
-        <button onClick={() => setModalOpen(true)} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 18px", background: "var(--accent-green)", border: "none", borderRadius: "8px", color: "#0f0f0f", fontSize: "14px", fontWeight: "700", cursor: "pointer" }}>
-          <Plus size={16} strokeWidth={2.5} /> Nueva compra
-        </button>
       </div>
 
       {loading ? (
@@ -1110,7 +1191,6 @@ export default function CuotasPage() {
                       <th>Pago final</th>
                       <th><button onClick={() => toggleSort("start_date")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: "inherit", fontWeight: "inherit", padding: 0 }}>Progreso<SI k="start_date" /></button></th>
                       <th style={{ textAlign: "right" }}><button onClick={() => toggleSort("amount")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: "inherit", fontWeight: "inherit", padding: 0 }}>Cuota/mes<SI k="amount" /></button></th>
-                      <th style={{ textAlign: "center" }}>Descuenta</th>
                       <th style={{ textAlign: "center", width: "90px" }}></th>
                     </tr>
                   </thead>
@@ -1159,11 +1239,6 @@ export default function CuotasPage() {
                                 mío: ${fmt2(cuotaMy)}
                               </div>
                             )}
-                          </td>
-                          <td style={{ textAlign: "center" }}>
-                            <span style={{ display: "inline-flex", padding: "3px 10px", borderRadius: "100px", fontSize: "12px", fontWeight: 600, background: p.counts_towards_balance ? "rgba(0,232,122,0.12)" : "rgba(107,114,128,0.12)", color: p.counts_towards_balance ? "var(--accent-green)" : "var(--text-muted)" }}>
-                              {p.counts_towards_balance ? "Sí" : "No"}
-                            </span>
                           </td>
                           <td style={{ textAlign: "center" }}>
                             <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>

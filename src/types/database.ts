@@ -138,4 +138,8 @@ export interface CreateInstallmentInput {
   expense_category_id?: string;
   expense_date?: string;        // fecha de la compra (para el gasto asociado)
   ccl_rate?: number;
+  has_refund?: boolean;
+  refund_amount?: number;
+  refund_category_id?: string;
+  refund_date?: string;
 }
