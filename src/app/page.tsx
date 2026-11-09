@@ -446,7 +446,7 @@ export default function Dashboard() {
   const recentTransactions = [
     ...expenses.map((e) => ({ ...e, kind: "expense" as const })),
     ...incomes.map((i) => ({ ...i, kind: "income" as const })),
-  ].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+  ].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")).slice(0, 5);
 
   const getCat = (id: string) => categories.find((c) => c.id === id);
 
@@ -724,7 +724,7 @@ export default function Dashboard() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p style={{ fontSize: "13px", fontWeight: "500", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{tx.detail}</p>
                         <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "2px" }}>
-                          {cat?.name} · {new Date(tx.date + "T12:00:00").toLocaleDateString("es-AR", { day: "numeric", month: "short" })}
+                          {cat?.name} · {tx.date ? new Date(tx.date + "T12:00:00").toLocaleDateString("es-AR", { day: "numeric", month: "short" }) : "—"}
                         </p>
                       </div>
                       <div style={{ textAlign: "right", flexShrink: 0 }}>

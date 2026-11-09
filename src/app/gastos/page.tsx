@@ -474,15 +474,18 @@ export default function GastosPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  const getCat = (id: string) => categories.find((c) => c.id === id);
+
   const filtered = expenses.filter((e) => {
     const catMatch = selectedCategory === "all" || e.category_id === selectedCategory;
-    const searchMatch = !searchQuery || e.detail.toLowerCase().includes(searchQuery.toLowerCase());
+    const query = searchQuery.toLowerCase().trim();
+    const detailText = (e.detail ?? "").toLowerCase();
+    const catName = (getCat(e.category_id)?.name ?? "").toLowerCase();
+    const searchMatch = !query || detailText.includes(query) || catName.includes(query);
     return catMatch && searchMatch;
   });
 
-  const total = filtered.reduce((s, e) => s + Number(e.amount_ars), 0);
-
-  const getCat = (id: string) => categories.find((c) => c.id === id);
+  const total = filtered.reduce((s, e) => s + Number(e.amount_ars || 0), 0);
 
   function toggleSort(key: typeof sortKey) {
     if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -491,10 +494,10 @@ export default function GastosPage() {
 
   const sorted = [...filtered].sort((a, b) => {
     let cmp = 0;
-    if (sortKey === "date") cmp = a.date.localeCompare(b.date);
+    if (sortKey === "date") cmp = (a.date ?? "").localeCompare(b.date ?? "");
     else if (sortKey === "category") cmp = (getCat(a.category_id)?.name ?? "").localeCompare(getCat(b.category_id)?.name ?? "");
     else if (sortKey === "detail") cmp = (a.detail ?? "").localeCompare(b.detail ?? "");
-    else if (sortKey === "amount_ars") cmp = Number(a.amount_ars) - Number(b.amount_ars);
+    else if (sortKey === "amount_ars") cmp = Number(a.amount_ars || 0) - Number(b.amount_ars || 0);
     return sortDir === "asc" ? cmp : -cmp;
   });
 
@@ -693,7 +696,7 @@ export default function GastosPage() {
                   {sorted.map((e) => (
                     <tr key={e.id}>
                       <td style={{ color: "var(--text-muted)", fontSize: "13px", whiteSpace: "nowrap" }}>
-                        {new Date(e.date + "T12:00:00").toLocaleDateString("es-AR", { day: "numeric", month: "short" })}
+                        {e.date ? new Date(e.date + "T12:00:00").toLocaleDateString("es-AR", { day: "numeric", month: "short" }) : "—"}
                       </td>
                       <td><CategoryChip cat={getCat(e.category_id)} /></td>
                       <td>

@@ -204,15 +204,19 @@ export default function IngresosPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  const getCat = (id: string) => categories.find((c) => c.id === id);
+  const incomeCats = categories.filter((c) => c.type === "income");
+
   const filtered = incomes.filter((i) => {
     const catMatch = selectedCategory === "all" || i.category_id === selectedCategory;
-    const searchMatch = !searchQuery || i.detail.toLowerCase().includes(searchQuery.toLowerCase());
+    const query = searchQuery.toLowerCase().trim();
+    const detailText = (i.detail ?? "").toLowerCase();
+    const catName = (getCat(i.category_id)?.name ?? "").toLowerCase();
+    const searchMatch = !query || detailText.includes(query) || catName.includes(query);
     return catMatch && searchMatch;
   });
 
-  const total = filtered.reduce((s, i) => s + Number(i.amount_ars), 0);
-  const getCat = (id: string) => categories.find((c) => c.id === id);
-  const incomeCats = categories.filter((c) => c.type === "income");
+  const total = filtered.reduce((s, i) => s + Number(i.amount_ars || 0), 0);
 
   function toggleSort(key: typeof sortKey) {
     if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -221,10 +225,10 @@ export default function IngresosPage() {
 
   const sorted = [...filtered].sort((a, b) => {
     let cmp = 0;
-    if (sortKey === "date") cmp = a.date.localeCompare(b.date);
+    if (sortKey === "date") cmp = (a.date ?? "").localeCompare(b.date ?? "");
     else if (sortKey === "category") cmp = (getCat(a.category_id)?.name ?? "").localeCompare(getCat(b.category_id)?.name ?? "");
     else if (sortKey === "detail") cmp = (a.detail ?? "").localeCompare(b.detail ?? "");
-    else if (sortKey === "amount_ars") cmp = Number(a.amount_ars) - Number(b.amount_ars);
+    else if (sortKey === "amount_ars") cmp = Number(a.amount_ars || 0) - Number(b.amount_ars || 0);
     return sortDir === "asc" ? cmp : -cmp;
   });
 
@@ -336,7 +340,7 @@ export default function IngresosPage() {
                 {sorted.map((income) => (
                   <tr key={income.id}>
                     <td style={{ color: "var(--text-muted)", fontSize: "13px", whiteSpace: "nowrap" }}>
-                      {new Date(income.date + "T12:00:00").toLocaleDateString("es-AR", { day: "numeric", month: "short" })}
+                      {income.date ? new Date(income.date + "T12:00:00").toLocaleDateString("es-AR", { day: "numeric", month: "short" }) : "—"}
                     </td>
                     <td><CategoryChip cat={getCat(income.category_id)} /></td>
                     <td>

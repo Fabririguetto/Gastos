@@ -749,7 +749,7 @@ export default function CuotasPage() {
       const endKey = (p.end_date ?? p.start_date).slice(0, 7);
       if (startKey > selectedMonth || endKey < selectedMonth) return false;
     }
-    if (searchQuery && !p.description.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    if (searchQuery && !(p.description ?? "").toLowerCase().includes(searchQuery.toLowerCase().trim())) return false;
     return true;
   });
 
@@ -760,8 +760,8 @@ export default function CuotasPage() {
   const progressRefMonth = selectedMonth ?? thisMonthKey();
   const sortedPurchases = [...filteredPurchases].sort((a, b) => {
     let cmp = 0;
-    if (sortKey === "description") cmp = a.description.localeCompare(b.description);
-    else if (sortKey === "start_date") cmp = a.start_date.localeCompare(b.start_date);
+    if (sortKey === "description") cmp = (a.description ?? "").localeCompare(b.description ?? "");
+    else if (sortKey === "start_date") cmp = (a.start_date ?? "").localeCompare(b.start_date ?? "");
     else if (sortKey === "progress") {
       cmp = (elapsedInstallments(a.start_date, progressRefMonth, a.total_installments) / a.total_installments)
         - (elapsedInstallments(b.start_date, progressRefMonth, b.total_installments) / b.total_installments);
