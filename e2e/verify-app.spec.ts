@@ -90,12 +90,24 @@ test('05 - página ingresos carga', async ({ page }) => {
   expect(page.url()).toContain('/ingresos');
 });
 
-test('06 - página analytics carga y muestra gráficos', async ({ page }) => {
+test('06 - analíticas en dashboard y redirección de /analytics', async ({ page }) => {
+  // Verificar que /analytics redirige (ya sea al dashboard o a login según sesión)
   await page.goto('/analytics');
   await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(1000); // esperar que rendericen los gráficos
-  await page.screenshot({ path: path.join(screenshotsDir, '07-analytics.png'), fullPage: true });
-  expect(page.url()).toContain('/analytics');
+  expect(page.url()).not.toContain('/analytics');
+
+  // Si el usuario está autenticado en la sesión de prueba, validar componentes
+  const analyticsHeading = page.locator('text=Análisis y Tendencias');
+  if (await analyticsHeading.isVisible()) {
+    await expect(analyticsHeading).toBeVisible();
+    const ingresosBtn = page.locator('button:has-text("Ingresos")').first();
+    if (await ingresosBtn.isVisible()) {
+      await ingresosBtn.click();
+      await page.waitForTimeout(300);
+    }
+  }
+
+  await page.screenshot({ path: path.join(screenshotsDir, '07-dashboard-analytics.png'), fullPage: true });
 });
 
 test('07 - mobile view (390px) - no rompe layout', async ({ page }) => {

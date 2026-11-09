@@ -271,7 +271,7 @@ function NewPurchaseModal({ open, onClose, onSave, cards, categories, currentCcl
               </div>
               {errors.category_id && <p style={{ fontSize: "11px", color: "var(--error)", marginTop: "4px" }}>{errors.category_id}</p>}
               <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px" }}>
-                Se usa para calcular el gasto por categoría en Analytics, aunque no descuente del saldo.
+                Se usa para calcular el gasto por categoría en el Dashboard, aunque no descuente del saldo.
               </p>
             </div>
 

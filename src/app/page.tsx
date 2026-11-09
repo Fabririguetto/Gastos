@@ -1,14 +1,121 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { TrendingUp, TrendingDown, CreditCard, Calendar, ArrowUpRight, Plus, ArrowUp, ArrowDown } from "lucide-react";
+import {
+  TrendingUp, TrendingDown, CreditCard, Calendar, ArrowUpRight, Plus, ArrowUp, ArrowDown, BarChart3
+} from "lucide-react";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  LineChart, Line, CartesianGrid, LabelList, Legend, ComposedChart,
+} from "recharts";
 import { DonutChart } from "@/components/charts/DonutChart";
 import { useCountUp } from "@/hooks/useCountUp";
 import { createClient } from "@/lib/supabase/client";
-import { DateRangeFilter, DateRange, currentMonthRange, historicRange } from "@/components/ui/DateRangeFilter";
+import { DateRangeFilter, DateRange, currentMonthRange, thisYearRange, historicRange } from "@/components/ui/DateRangeFilter";
 import type { Category, Expense, Income, InstallmentPurchase } from "@/types/database";
 
 const MONTH_NAMES_SHORT = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
+const tooltipStyle = {
+  contentStyle: { background: "#1a1a1a", border: "1px solid #252525", borderRadius: "8px", fontSize: "13px", color: "#f5f5f5" },
+};
+const axisStyle = {
+  tick: { fill: "#6b7280", fontSize: 11 },
+  axisLine: { stroke: "#252525" },
+  tickLine: { stroke: "transparent" },
+};
+
+function formatK(v: number) {
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1000) return `$${Math.round(v / 1000)}k`;
+  return `$${v}`;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const CustomBarTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{ background: "#1a1a1a", border: "1px solid #252525", borderRadius: "8px", padding: "10px 14px", fontSize: "13px" }}>
+      <p style={{ color: "#6b7280", marginBottom: "6px", fontWeight: 600 }}>{label}</p>
+      {payload.map((p: { name: string; value: number; color: string }) => (
+        <p key={p.name} style={{ color: p.color, marginBottom: "2px" }}>
+          {p.name === "ingresos" ? "Ingresos" : "Gastos"}: {formatK(p.value)}
+        </p>
+      ))}
+      {payload.length === 2 && (
+        <p style={{ color: "#6b7280", marginTop: "4px", borderTop: "1px solid #252525", paddingTop: "4px" }}>
+          Delta: {formatK(payload[0].value - payload[1].value)}
+        </p>
+      )}
+    </div>
+  );
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function DeltaLabel(props: any) {
+  const { x, y, width, value, index, data } = props;
+  if (!data || index === undefined) return null;
+  const row = data[index];
+  if (!row || value !== row.ingresos) return null;
+  const delta = row.ingresos - row.gastos;
+  if (delta <= 0) return null;
+  return (
+    <text x={x + width / 2} y={y - 6} textAnchor="middle" fill="#6b7280" fontSize={10} fontWeight={500}>
+      +{formatK(delta)}
+    </text>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const CustomCuotasTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload?.length) return null;
+  const LABELS: Record<string, string> = {
+    consumo: "Consumo del mes",
+    cuotaPeriodo: "Cuotas del período",
+    cuotaMia: "Cuotas abonadas por mí",
+  };
+  return (
+    <div style={{ background: "#1a1a1a", border: "1px solid #252525", borderRadius: "8px", padding: "10px 14px", fontSize: "13px" }}>
+      <p style={{ color: "#6b7280", marginBottom: "6px", fontWeight: 600 }}>{label}</p>
+      {payload.map((p: { dataKey: string; value: number; color: string }) => (
+        <p key={p.dataKey} style={{ color: p.color, marginBottom: "2px" }}>
+          {LABELS[p.dataKey] ?? p.dataKey}: {formatK(p.value)}
+        </p>
+      ))}
+    </div>
+  );
+};
+
+interface MonthRow { dateKey: string; month: string; ingresos: number; gastos: number; ccl: number; }
+interface CclRow { date: string; ccl: number; }
+interface CuotasRow { dateKey: string; month: string; consumo: number; cuotaPeriodo: number; cuotaMia: number; }
+
+function monthsInRange(from: string, to: string): string[] {
+  const [fy, fm] = from.split("-").map(Number);
+  const [ty, tm] = to.split("-").map(Number);
+  const months: string[] = [];
+  let y = fy, m = fm;
+  while (y < ty || (y === ty && m <= tm)) {
+    months.push(`${y}-${String(m).padStart(2, "0")}`);
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+  return months;
+}
+
+function last6MonthsRange(): DateRange {
+  const now = new Date();
+  const toY = now.getFullYear();
+  const toM = now.getMonth() + 1;
+  const toDay = new Date(toY, toM, 0).getDate();
+  const fromDate = new Date(toY, toM - 6, 1);
+  const fromY = fromDate.getFullYear();
+  const fromM = fromDate.getMonth() + 1;
+  return {
+    from: `${fromY}-${String(fromM).padStart(2, "0")}-01`,
+    to: `${toY}-${String(toM).padStart(2, "0")}-${String(toDay).padStart(2, "0")}`,
+  };
+}
 
 // Las cuotas se etiquetan por mes de pago (start_date), no por mes de cierre: una compra
 // hecha en agosto se paga en septiembre. El filtro de fecha trabaja en meses de calendario,
@@ -114,7 +221,16 @@ function CuotasMesCard({ label, totalArs, totalUsd, mioArs, mioUsd, isShared, ic
 
 export default function Dashboard() {
   const [mounted, setMounted] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange>(currentMonthRange());
+  const [categoryTab, setCategoryTab] = useState<"expense" | "income">("expense");
+
+  // Analytics section state
+  const [analyticsRange, setAnalyticsRange] = useState<DateRange>(thisYearRange());
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
+  const [monthlyData, setMonthlyData] = useState<MonthRow[]>([]);
+  const [cclData, setCclData] = useState<CclRow[]>([]);
+  const [cuotasData, setCuotasData] = useState<CuotasRow[]>([]);
 
   // Data from Supabase
   const [categories, setCategories] = useState<Category[]>([]);
@@ -129,6 +245,13 @@ export default function Dashboard() {
   const [historicGastos, setHistoricGastos] = useState(0);
 
   const sb = createClient();
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   // Load static data once
   useEffect(() => {
@@ -149,6 +272,7 @@ export default function Dashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Load KPI & category data for the selected period
   const loadMonthData = useCallback(async () => {
     setLoading(true);
     try {
@@ -170,6 +294,87 @@ export default function Dashboard() {
   }, [dateRange]);
 
   useEffect(() => { loadMonthData(); }, [loadMonthData]);
+
+  // Load Analytics trend data
+  const loadAnalyticsData = useCallback(async () => {
+    setAnalyticsLoading(true);
+    try {
+      const { from, to } = analyticsRange;
+      const [expRes, incRes, rateRes, instRes] = await Promise.all([
+        sb.from("expenses").select("date,amount_ars,category_id").gte("date", from).lte("date", to),
+        sb.from("incomes").select("date,amount_ars").gte("date", from).lte("date", to),
+        sb.from("exchange_rates").select("date,ccl_rate").gte("date", from).lte("date", to).order("date", { ascending: true }),
+        sb.from("installment_purchases").select("*"),
+      ]);
+
+      const aExpenses = expRes.data ?? [];
+      const aIncomes = incRes.data ?? [];
+      const aRates = rateRes.data ?? [];
+      const aPurchases: InstallmentPurchase[] = instRes.data ?? [];
+
+      // Monthly aggregates
+      const monthMap: Record<string, { ingresos: number; gastos: number; ccl: number }> = {};
+      for (const e of aExpenses) {
+        const key = e.date.slice(0, 7);
+        if (!monthMap[key]) monthMap[key] = { ingresos: 0, gastos: 0, ccl: 1548 };
+        monthMap[key].gastos += Number(e.amount_ars);
+      }
+      for (const i of aIncomes) {
+        const key = i.date.slice(0, 7);
+        if (!monthMap[key]) monthMap[key] = { ingresos: 0, gastos: 0, ccl: 1548 };
+        monthMap[key].ingresos += Number(i.amount_ars);
+      }
+      for (const r of aRates) {
+        const key = r.date.slice(0, 7);
+        if (monthMap[key]) monthMap[key].ccl = Number(r.ccl_rate);
+      }
+
+      const sortedMonths = Object.keys(monthMap).sort();
+      const rows: MonthRow[] = sortedMonths.map((key) => {
+        const [, mm] = key.split("-").map(Number);
+        return {
+          dateKey: key,
+          month: MONTH_NAMES_SHORT[mm - 1],
+          ...monthMap[key],
+        };
+      });
+      setMonthlyData(rows);
+
+      // CCL history
+      const cclByMonth: Record<string, number> = {};
+      for (const r of aRates) cclByMonth[r.date.slice(0, 7)] = Number(r.ccl_rate);
+      const lastKnownCcl = aRates.length > 0 ? Number(aRates[aRates.length - 1].ccl_rate) : 1548;
+      setCclData(Object.entries(cclByMonth).sort().map(([date, cclVal]) => ({ date, ccl: cclVal })));
+
+      // Cuotas evolution
+      const monthKeysInRange = monthsInRange(from, to);
+      const cuotasRows: CuotasRow[] = monthKeysInRange.map((key) => {
+        const rate = cclByMonth[key] ?? lastKnownCcl;
+        let consumo = 0, cuotaPeriodo = 0, cuotaMia = 0;
+        for (const p of aPurchases) {
+          const startKey = p.start_date.slice(0, 7);
+          const endKey = (p.end_date ?? p.start_date).slice(0, 7);
+          const toArs = (v: number) => (p.currency === "USD" ? v * rate : v);
+          if (startKey === key) consumo += toArs(Number(p.total_amount));
+          if (startKey <= key && key <= endKey) {
+            cuotaPeriodo += toArs(Number(p.total_amount) / p.total_installments);
+            cuotaMia += toArs(Number(p.paid_amount ?? p.total_amount) / p.total_installments);
+          }
+        }
+        const [, mm] = key.split("-").map(Number);
+        return { dateKey: key, month: MONTH_NAMES_SHORT[mm - 1], consumo, cuotaPeriodo, cuotaMia };
+      });
+      const hasData = (r: CuotasRow) => r.consumo > 0 || r.cuotaPeriodo > 0 || r.cuotaMia > 0;
+      const firstIdx = cuotasRows.findIndex(hasData);
+      const lastIdx = cuotasRows.length - 1 - [...cuotasRows].reverse().findIndex(hasData);
+      setCuotasData(firstIdx === -1 ? [] : cuotasRows.slice(firstIdx, lastIdx + 1));
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analyticsRange]);
+
+  useEffect(() => { loadAnalyticsData(); }, [loadAnalyticsData]);
 
   // Derive month key from start of range for installment computation
   const selectedMonth = dateRange.from.slice(0, 7);
@@ -197,14 +402,45 @@ export default function Dashboard() {
   const ingresos_usd = ingresos_ars / ccl;
   const gastos_usd = gastos_ars / ccl;
 
-  // Category breakdown
+  // Category breakdowns: both expense and income
   const expenseCats = categories.filter((c) => c.type === "expense");
-  const categoryData = expenseCats.map((cat) => ({
+  const incomeCats = categories.filter((c) => c.type === "income");
+
+  const expenseCategoryData = expenseCats.map((cat) => ({
     name: cat.name,
     emoji: cat.emoji,
     color: cat.color,
     value: expenses.filter((e) => e.category_id === cat.id).reduce((s, e) => s + Number(e.amount_ars), 0),
   })).filter((d) => d.value > 0);
+
+  const incomeCategoryData = incomeCats.map((cat) => ({
+    name: cat.name,
+    emoji: cat.emoji,
+    color: cat.color,
+    value: incomes.filter((i) => i.category_id === cat.id).reduce((s, i) => s + Number(i.amount_ars), 0),
+  })).filter((d) => d.value > 0);
+
+  const activeCategoryData = categoryTab === "expense" ? expenseCategoryData : incomeCategoryData;
+
+  // Analytics derived calculations
+  const maxGastoMonth = monthlyData.length > 0
+    ? monthlyData.reduce((prev, curr) => curr.gastos > prev.gastos ? curr : prev)
+    : null;
+
+  const avgGastos = monthlyData.length > 0
+    ? monthlyData.reduce((s, m) => s + m.gastos, 0) / monthlyData.length
+    : 0;
+
+  const cumulativeData = monthlyData.map((d, i) => {
+    const slice = monthlyData.slice(0, i + 1);
+    return {
+      month: d.month,
+      saldo_ars: Math.round(slice.reduce((s, m) => s + m.ingresos - m.gastos, 0)),
+      saldo_usd: Math.round(slice.reduce((s, m) => s + (m.ingresos - m.gastos) / m.ccl, 0)),
+    };
+  });
+
+  const currentCcl = cclData.length > 0 ? cclData[cclData.length - 1].ccl : ccl;
 
   // Recent transactions
   const recentTransactions = [
@@ -221,6 +457,12 @@ export default function Dashboard() {
   const budgetRemaining = budgetArs - budgetUsed;
   const budgetGradient = budgetPct < 60 ? "linear-gradient(90deg, #00e87a, #00e87a)" : budgetPct < 85 ? "linear-gradient(90deg, #00e87a 0%, #f59e0b 100%)" : "linear-gradient(90deg, #f59e0b 0%, #ef4444 100%)";
   const budgetColor = budgetPct < 60 ? "var(--accent-green)" : budgetPct < 85 ? "var(--warning)" : "var(--error)";
+
+  const emptyChart = (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-muted)", fontSize: "13px" }}>
+      Sin datos en el período seleccionado
+    </div>
+  );
 
   return (
     <div style={{ minHeight: "100vh", animation: "fadeIn 0.4s ease-out" }}>
@@ -262,13 +504,87 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="hidden md:flex" style={{ flex: "0 0 40%", justifyContent: "center", alignItems: "center" }}>
-            <DonutChart data={categoryData.length > 0 ? categoryData : [{ name: "Sin datos", emoji: "📭", color: "#333", value: 1 }]} size={220} />
+          <div className="hidden md:flex flex-col items-center gap-3" style={{ flex: "0 0 40%", justifyContent: "center" }}>
+            <div style={{ display: "inline-flex", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "8px", padding: "3px" }}>
+              <button
+                onClick={() => setCategoryTab("expense")}
+                style={{
+                  padding: "5px 12px",
+                  borderRadius: "6px",
+                  border: "none",
+                  fontSize: "12px",
+                  fontWeight: categoryTab === "expense" ? 600 : 400,
+                  background: categoryTab === "expense" ? "rgba(239,68,68,0.14)" : "transparent",
+                  color: categoryTab === "expense" ? "var(--error)" : "var(--text-muted)",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                Gastos
+              </button>
+              <button
+                onClick={() => setCategoryTab("income")}
+                style={{
+                  padding: "5px 12px",
+                  borderRadius: "6px",
+                  border: "none",
+                  fontSize: "12px",
+                  fontWeight: categoryTab === "income" ? 600 : 400,
+                  background: categoryTab === "income" ? "rgba(0,232,122,0.14)" : "transparent",
+                  color: categoryTab === "income" ? "var(--accent-green)" : "var(--text-muted)",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                Ingresos
+              </button>
+            </div>
+            <DonutChart
+              data={activeCategoryData.length > 0 ? activeCategoryData : [{ name: "Sin datos", emoji: "📭", color: "#333", value: 1 }]}
+              size={220}
+              label={categoryTab === "expense" ? "GASTOS" : "INGRESOS"}
+            />
           </div>
         </div>
 
-        <div className="flex md:hidden justify-center mt-6">
-          <DonutChart data={categoryData.length > 0 ? categoryData : [{ name: "Sin datos", emoji: "📭", color: "#333", value: 1 }]} size={160} />
+        <div className="flex md:hidden flex-col items-center gap-3 mt-6">
+          <div style={{ display: "inline-flex", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "8px", padding: "3px" }}>
+            <button
+              onClick={() => setCategoryTab("expense")}
+              style={{
+                padding: "5px 12px",
+                borderRadius: "6px",
+                border: "none",
+                fontSize: "12px",
+                fontWeight: categoryTab === "expense" ? 600 : 400,
+                background: categoryTab === "expense" ? "rgba(239,68,68,0.14)" : "transparent",
+                color: categoryTab === "expense" ? "var(--error)" : "var(--text-muted)",
+                cursor: "pointer",
+              }}
+            >
+              Gastos
+            </button>
+            <button
+              onClick={() => setCategoryTab("income")}
+              style={{
+                padding: "5px 12px",
+                borderRadius: "6px",
+                border: "none",
+                fontSize: "12px",
+                fontWeight: categoryTab === "income" ? 600 : 400,
+                background: categoryTab === "income" ? "rgba(0,232,122,0.14)" : "transparent",
+                color: categoryTab === "income" ? "var(--accent-green)" : "var(--text-muted)",
+                cursor: "pointer",
+              }}
+            >
+              Ingresos
+            </button>
+          </div>
+          <DonutChart
+            data={activeCategoryData.length > 0 ? activeCategoryData : [{ name: "Sin datos", emoji: "📭", color: "#333", value: 1 }]}
+            size={160}
+            label={categoryTab === "expense" ? "GASTOS" : "INGRESOS"}
+          />
         </div>
       </div>
 
@@ -311,16 +627,57 @@ export default function Dashboard() {
         </div>
 
         {/* ─── Category breakdown + Recent transactions ─── */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "24px" }} className="lg:grid-cols-[1fr,1fr]">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "24px", marginBottom: "44px" }} className="lg:grid-cols-[1fr,1fr]">
 
           <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "12px", padding: "24px" }}>
-            <h2 style={{ fontSize: "15px", fontWeight: "700", marginBottom: "20px" }}>Gastos por categoría</h2>
-            {categoryData.length === 0 ? (
-              <p style={{ fontSize: "13px", color: "var(--text-muted)", textAlign: "center", padding: "24px 0" }}>Sin gastos este período</p>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <h2 style={{ fontSize: "15px", fontWeight: "700" }}>
+                {categoryTab === "expense" ? "Gastos por categoría" : "Ingresos por categoría"}
+              </h2>
+              <div style={{ display: "inline-flex", background: "#1a1a1a", border: "1px solid var(--border)", borderRadius: "8px", padding: "2px" }}>
+                <button
+                  onClick={() => setCategoryTab("expense")}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: "6px",
+                    border: "none",
+                    fontSize: "11px",
+                    fontWeight: categoryTab === "expense" ? 600 : 400,
+                    background: categoryTab === "expense" ? "rgba(239,68,68,0.15)" : "transparent",
+                    color: categoryTab === "expense" ? "var(--error)" : "var(--text-muted)",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  Gastos
+                </button>
+                <button
+                  onClick={() => setCategoryTab("income")}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: "6px",
+                    border: "none",
+                    fontSize: "11px",
+                    fontWeight: categoryTab === "income" ? 600 : 400,
+                    background: categoryTab === "income" ? "rgba(0,232,122,0.15)" : "transparent",
+                    color: categoryTab === "income" ? "var(--accent-green)" : "var(--text-muted)",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  Ingresos
+                </button>
+              </div>
+            </div>
+
+            {activeCategoryData.length === 0 ? (
+              <p style={{ fontSize: "13px", color: "var(--text-muted)", textAlign: "center", padding: "24px 0" }}>
+                Sin {categoryTab === "expense" ? "gastos" : "ingresos"} este período
+              </p>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                {[...categoryData].sort((a, b) => b.value - a.value).map((cat) => {
-                  const tot = categoryData.reduce((s, c) => s + c.value, 0);
+                {[...activeCategoryData].sort((a, b) => b.value - a.value).map((cat) => {
+                  const tot = activeCategoryData.reduce((s, c) => s + c.value, 0);
                   const pct = tot > 0 ? Math.round((cat.value / tot) * 100) : 0;
                   return (
                     <div key={cat.name}>
@@ -388,6 +745,221 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+
+        {/* ─── ANALYTICS & TRENDS SECTION ─── */}
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: "40px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "28px", flexWrap: "wrap", gap: "16px" }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <BarChart3 size={20} color="var(--accent-green)" />
+                <h2 style={{ fontSize: "20px", fontWeight: "700", letterSpacing: "-0.02em" }}>Análisis y Tendencias</h2>
+              </div>
+              <p style={{ fontSize: "13px", color: "var(--text-muted)", marginTop: "4px" }}>
+                Visualizá tus finanzas en perspectiva histórica y comparativa
+              </p>
+            </div>
+
+            {/* Presets selector for trends */}
+            <div style={{ display: "flex", gap: "6px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "8px", padding: "4px" }}>
+              {[
+                { label: "Este año", getRange: thisYearRange },
+                { label: "Últimos 6m", getRange: last6MonthsRange },
+                { label: "Histórico", getRange: historicRange },
+              ].map((p) => {
+                const pr = p.getRange();
+                const active = pr.from === analyticsRange.from && pr.to === analyticsRange.to;
+                return (
+                  <button
+                    key={p.label}
+                    onClick={() => setAnalyticsRange(pr)}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      border: `1px solid ${active ? "var(--accent-green)" : "transparent"}`,
+                      background: active ? "rgba(0,232,122,0.12)" : "transparent",
+                      color: active ? "var(--accent-green)" : "var(--text-muted)",
+                      fontSize: "12px",
+                      fontWeight: active ? 600 : 400,
+                      cursor: "pointer",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {analyticsLoading ? (
+            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "14px", padding: "60px 24px", textAlign: "center" }}>
+              <p style={{ color: "var(--text-muted)", fontSize: "14px" }}>Cargando analíticas...</p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+
+              {/* Chart 1: Ingresos vs Gastos */}
+              <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "14px", padding: "24px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px", flexWrap: "wrap", gap: "8px" }}>
+                  <div>
+                    <h3 style={{ fontSize: "15px", fontWeight: "700" }}>Ingresos vs Gastos</h3>
+                    <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>Comparativa mensual</p>
+                  </div>
+                  <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+                    {[{ color: "#00e87a", label: "Ingresos" }, { color: "#ef4444", label: "Gastos" }].map((l) => (
+                      <div key={l.label} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <div style={{ width: "10px", height: "10px", borderRadius: "2px", background: l.color }} />
+                        <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>{l.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ height: "300px" }}>
+                  {monthlyData.length === 0 ? emptyChart : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={monthlyData} barGap={6} barCategoryGap="28%">
+                        <CartesianGrid strokeDasharray="0" stroke="#1d1d1d" vertical={false} />
+                        <XAxis dataKey="month" {...axisStyle} />
+                        <YAxis tickFormatter={formatK} {...axisStyle} width={60} />
+                        <Tooltip content={<CustomBarTooltip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+                        <Bar dataKey="ingresos" fill="#00e87a" radius={[4, 4, 0, 0]} maxBarSize={32}>
+                          <LabelList content={(props) => <DeltaLabel {...props} data={monthlyData} />} />
+                        </Bar>
+                        <Bar dataKey="gastos" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={32} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
+
+              {/* Chart 2: Evolución de cuotas */}
+              <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "14px", padding: "24px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px", flexWrap: "wrap", gap: "8px" }}>
+                  <div>
+                    <h3 style={{ fontSize: "15px", fontWeight: "700" }}>Evolución de cuotas</h3>
+                    <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>Consumo mensual vs. cuotas del período</p>
+                  </div>
+                  <div style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap" }}>
+                    {[
+                      { color: "#a78bfa", label: "Consumo del mes" },
+                      { color: "#0ea5e9", label: "Cuotas del período" },
+                      { color: "#00e87a", label: "Cuotas abonadas por mí" },
+                    ].map((l) => (
+                      <div key={l.label} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <div style={{ width: "10px", height: "10px", borderRadius: "2px", background: l.color }} />
+                        <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>{l.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ height: "300px" }}>
+                  {cuotasData.length === 0 ? emptyChart : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={cuotasData} barCategoryGap="28%">
+                        <CartesianGrid strokeDasharray="0" stroke="#1d1d1d" vertical={false} />
+                        <XAxis dataKey="month" {...axisStyle} />
+                        <YAxis tickFormatter={formatK} {...axisStyle} width={60} />
+                        <Tooltip content={<CustomCuotasTooltip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+                        <Bar dataKey="consumo" fill="#a78bfa" radius={[4, 4, 0, 0]} maxBarSize={32} />
+                        <Line type="monotone" dataKey="cuotaPeriodo" stroke="#0ea5e9" strokeWidth={2} dot={{ fill: "#0ea5e9", r: 3, strokeWidth: 0 }} activeDot={{ r: 5 }} />
+                        <Line type="monotone" dataKey="cuotaMia" stroke="#00e87a" strokeWidth={2} dot={{ fill: "#00e87a", r: 3, strokeWidth: 0 }} activeDot={{ r: 5 }} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
+
+              {/* Row 3: Mes con mayor gasto + Dólar CCL */}
+              <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: "24px", display: "grid" }}>
+                {/* Mes con mayor gasto */}
+                <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "14px", padding: "24px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                  <div>
+                    <p style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "16px" }}>Mes con mayor gasto</p>
+                    {maxGastoMonth ? (
+                      <>
+                        <p style={{ fontSize: "36px", fontWeight: "800", color: "var(--error)", letterSpacing: "-0.03em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                          {formatK(maxGastoMonth.gastos)}
+                        </p>
+                        <p style={{ fontSize: "20px", fontWeight: "700", color: "var(--text-primary)", marginTop: "8px", letterSpacing: "-0.02em" }}>
+                          {maxGastoMonth.month} {maxGastoMonth.dateKey.split("-")[0]}
+                        </p>
+                      </>
+                    ) : (
+                      <p style={{ color: "var(--text-muted)", fontSize: "14px" }}>Sin datos</p>
+                    )}
+                  </div>
+                  {maxGastoMonth && avgGastos > 0 && (
+                    <div style={{ marginTop: "20px", padding: "12px 14px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: "8px" }}>
+                      <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>vs promedio</p>
+                      <p style={{ fontSize: "14px", fontWeight: "700", color: "var(--error)", marginTop: "4px", fontVariantNumeric: "tabular-nums" }}>
+                        +{formatK(Math.max(0, maxGastoMonth.gastos - Math.round(avgGastos)))}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* CCL */}
+                <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "14px", padding: "24px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                    <div>
+                      <h3 style={{ fontSize: "15px", fontWeight: "700" }}>Dólar CCL</h3>
+                      <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>Contado con liquidación</p>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <span style={{ fontSize: "11px", color: "var(--text-muted)", display: "block" }}>Actual</span>
+                      <span style={{ fontSize: "16px", fontWeight: "700", color: "var(--accent-blue)", fontVariantNumeric: "tabular-nums" }}>
+                        ${new Intl.NumberFormat("es-AR").format(currentCcl)}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ height: "200px" }}>
+                    {cclData.length === 0 ? emptyChart : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={cclData}>
+                          <CartesianGrid strokeDasharray="0" stroke="#1d1d1d" vertical={false} />
+                          <XAxis dataKey="date" {...axisStyle} tickFormatter={(v: string) => v.slice(5)} />
+                          <YAxis {...axisStyle} width={55} tickFormatter={(v: number) => `$${Math.round(v / 1000)}k`} domain={["auto", "auto"]} />
+                          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                          <Tooltip {...tooltipStyle} formatter={(v: any) => [`$${Number(v).toLocaleString("es-AR")}`, "CCL"]} />
+                          <Line type="monotone" dataKey="ccl" stroke="#0ea5e9" strokeWidth={2} dot={{ fill: "#0ea5e9", r: 3, strokeWidth: 0 }} activeDot={{ r: 5 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 4: Balance acumulado */}
+              <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "14px", padding: "24px" }}>
+                <div style={{ marginBottom: "20px" }}>
+                  <h3 style={{ fontSize: "15px", fontWeight: "700" }}>Balance acumulado</h3>
+                  <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>Ahorro neto acumulado en ARS y USD</p>
+                </div>
+                <div style={{ height: "260px" }}>
+                  {cumulativeData.length === 0 ? emptyChart : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={cumulativeData}>
+                        <CartesianGrid strokeDasharray="0" stroke="#1d1d1d" vertical={false} />
+                        <XAxis dataKey="month" {...axisStyle} />
+                        <YAxis yAxisId="ars" {...axisStyle} width={isMobile ? 48 : 65} tickFormatter={formatK} />
+                        {!isMobile && (
+                          <YAxis yAxisId="usd" orientation="right" {...axisStyle} width={52} tickFormatter={(v: number) => `u$d${Math.round(v)}`} />
+                        )}
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                        <Tooltip {...tooltipStyle} formatter={(v: any, name: any) => name === "saldo_ars" ? [`$${new Intl.NumberFormat("es-AR").format(Number(v))}`, "ARS"] : [`u$d ${Number(v).toLocaleString("es-AR")}`, "USD"]} />
+                        <Legend formatter={(value) => <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>{value === "saldo_ars" ? "Balance ARS" : "Balance USD"}</span>} />
+                        <Line yAxisId="ars" type="monotone" dataKey="saldo_ars" stroke="#00e87a" strokeWidth={2} dot={{ fill: "#00e87a", r: 3, strokeWidth: 0 }} activeDot={{ r: 5 }} />
+                        <Line yAxisId={isMobile ? "ars" : "usd"} type="monotone" dataKey="saldo_usd" stroke="#0ea5e9" strokeWidth={2} dot={{ fill: "#0ea5e9", r: 3, strokeWidth: 0 }} activeDot={{ r: 5 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          )}
+        </div>
+
       </div>
 
       <a href="/gastos" className="md:hidden" style={{ position: "fixed", bottom: "80px", right: "20px", width: "56px", height: "56px", background: "var(--accent-green)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(0,232,122,0.4)", textDecoration: "none", zIndex: 40 }}>

@@ -13,15 +13,16 @@ interface DonutData {
 interface DonutChartProps {
   data: DonutData[];
   size?: number;
+  label?: string;
 }
 
-export function DonutChart({ data, size = 180 }: DonutChartProps) {
+export function DonutChart({ data, size = 180, label = "GASTOS" }: DonutChartProps) {
   const [active, setActive] = useState<DonutData | null>(null);
   const total = data.reduce((s, d) => s + d.value, 0);
 
   const displayed = active ?? null;
   const centerValue = displayed ? displayed.value : total;
-  const centerLabel = displayed ? `${displayed.emoji} ${displayed.name}` : "GASTOS";
+  const centerLabel = displayed ? `${displayed.emoji} ${displayed.name}` : label;
   const isTotal = !displayed;
 
   return (

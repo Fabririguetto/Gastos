@@ -7,7 +7,6 @@ import {
   TrendingDown,
   TrendingUp,
   CreditCard,
-  BarChart3,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -19,7 +18,6 @@ const NAV_ITEMS = [
   { href: "/gastos", label: "Gastos", icon: TrendingDown },
   { href: "/ingresos", label: "Ingresos", icon: TrendingUp },
   { href: "/cuotas", label: "Cuotas", icon: CreditCard },
-  { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/configuracion", label: "Config", icon: Settings },
 ];
 
